@@ -207,10 +207,12 @@ def fetch_klipper_data(p):
 def fetch_prusalink_data(p):
     if not p.get('ip') or not p.get('api_key'): return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
     try:
-        r = requests.get(f"http://{p['ip']}/api/v1/status", headers={'X-Api-Key': p['api_key']}, timeout=5)
-        r.raise_for_status()
-        data = r.json()
-        p_data, j_data = data.get('printer', {}), data.get('job', {})
+        p_res = requests.get(f"http://{p['ip']}/api/v1/printer", headers={'X-Api-Key': p['api_key']}, timeout=5)
+        j_res = requests.get(f"http://{p['ip']}/api/v1/job", headers={'X-Api-Key': p['api_key']}, timeout=5)
+        p_res.raise_for_status()
+        j_res.raise_for_status()
+        p_data = p_res.json()
+        j_data = j_res.json()
         state = p_data.get('state', 'Unknown').title()
         filename = None
         file_obj = j_data.get('file', {}) if j_data else {}
@@ -238,7 +240,10 @@ def get_image_src(printer_config):
     return f"https://via.placeholder.com/400x200/dee2e6/6c757d?text={printer_config.get('name', 'Printer')}"
 
 def fetch_all(printers):
-    return {p['name']: {**fetch_printer(p), 'image_src': get_image_src(p)} for p in printers}
+    return {p['name']: {**fetch_printer(p),
+                        'image_src': get_image_src(p),
+                        'kiosk_hide_filename': p.get('kiosk_hide_filename', False)}
+            for p in printers}
 
 # --- FLASK ROUTES ----------------------------------------------------------
 @app.route('/')
@@ -338,6 +343,7 @@ def manage_printers():
 
     if action == 'add_printer' and check_perm('add_printer'):
         new_printer = {k: request.form.get(k) for k in ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
+        new_printer['kiosk_hide_filename'] = 'kiosk_hide_filename' in request.form
         
         if 'image_file' in request.files:
             file = request.files['image_file']
@@ -350,7 +356,7 @@ def manage_printers():
         if any(p['name'] == new_printer['name'] for p in printers):
             flash(f"A printer with the name '{new_printer['name']}' already exists.", 'danger')
         else:
-            printers.append({k: v for k, v in new_printer.items() if v})
+            printers.append(new_printer)
             save_data(printers, PRINTERS_FILE)
             flash(f"Printer '{new_printer['name']}' added.", 'success')
     elif action == 'delete_printer' and check_perm('delete_printer'):
@@ -375,6 +381,7 @@ def edit_printer(original_name):
         updated_data = printer_to_edit.copy()
         form_data = {k: request.form.get(k) for k in ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
         updated_data.update(form_data)
+        updated_data['kiosk_hide_filename'] = 'kiosk_hide_filename' in request.form
 
         if 'image_file' in request.files:
             file = request.files['image_file']
@@ -386,7 +393,7 @@ def edit_printer(original_name):
 
         for i, p in enumerate(printers):
             if p['name'] == original_name:
-                printers[i] = {k: v for k, v in updated_data.items() if v}
+                printers[i] = updated_data
         
         save_data(printers, PRINTERS_FILE)
         flash(f"Printer '{updated_data['name']}' updated.", 'success')
@@ -854,6 +861,9 @@ cat > templates/admin.html << 'EOF'
                             <input type="file" name="image_file" accept="image/*">
                             <small>Overrides Image URL if provided.</small>
                         </div>
+                        <div style="grid-column: span 2;">
+                            <label><input type="checkbox" name="kiosk_hide_filename"> Hide Filename in Kiosk</label>
+                        </div>
                     </div>
                     <button type="submit" style="margin-top: 1rem;">Add Printer</button>
                 </form>
@@ -1307,6 +1317,9 @@ cat > templates/edit_printer.html << 'EOF'
                     <input type="file" name="image_file" accept="image/*">
                     <small>Current file: <strong>{{ printer.get('local_image_filename', 'None') }}</strong>. Overrides URL.</small>
                 </div>
+                <div style="grid-column: span 2;">
+                    <label><input type="checkbox" name="kiosk_hide_filename" {% raw %}{% if printer.kiosk_hide_filename %}checked{% endif %}{% endraw %}> Hide Filename in Kiosk</label>
+                </div>
             </div>
             <div style="margin-top: 2rem;">
                 <button type="submit">Save Changes</button>
@@ -1579,7 +1592,8 @@ cat > templates/kiosk.html << 'EOF'
 
             const imgSrc = printerData.image_src || `https://via.placeholder.com/400x200/dee2e6/6c757d?text=${printerName}`;
             const statusColor = config.status_colors[stateKey] || '#6c757d';
-            const filenameHtml = printerData.filename ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
+            const showFilename = !printerData.kiosk_hide_filename;
+            const filenameHtml = (showFilename && printerData.filename) ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
 
             let timeHtml = '';
             if (state === 'Printing') {
@@ -1666,9 +1680,9 @@ cat > templates/kiosk.html << 'EOF'
             const images = globalKioskConfig.kiosk_images || [];
             let imageIndex = 0;
             if (printerSlides.length === 0 && images.length > 0) {
-                 images.forEach(image => {
+                images.forEach(image => {
                     slides.push({ isImage: true, url: image.url, time: image.time });
-                 });
+                });
             } else {
                 for (let i = 0; i < printerSlides.length; i++) {
                     slides.push(printerSlides[i]);
@@ -1677,6 +1691,11 @@ cat > templates/kiosk.html << 'EOF'
                         slides.push({ isImage: true, url: image.url, time: image.time });
                         imageIndex++;
                     }
+                }
+                while (images.length > 0 && imageIndex < images.length) {
+                    const image = images[imageIndex];
+                    slides.push({ isImage: true, url: image.url, time: image.time });
+                    imageIndex++;
                 }
             }
             
