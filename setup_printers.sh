@@ -207,15 +207,31 @@ def fetch_klipper_data(p):
 def fetch_prusalink_data(p):
     if not p.get('ip') or not p.get('api_key'): return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
     try:
-        r = requests.get(f"http://{p['ip']}/api/v1/status", headers={'X-Api-Key': p['api_key']}, timeout=5)
-        r.raise_for_status()
-        data = r.json()
-        p_data, j_data = data.get('printer', {}), data.get('job', {})
-        state = p_data.get('state', 'Unknown').title()
-        filename = None
-        file_obj = j_data.get('file', {}) if j_data else {}
-        filename = file_obj.get('display_name') or file_obj.get('name') or file_obj.get('path')
-        return {'state': state, 'filename': filename, 'progress': int(j_data.get('progress')) if j_data.get('progress') is not None else None, 'bed_temp': round(p_data.get('temp_bed'), 1) if p_data.get('temp_bed') is not None else None, 'nozzle_temp': round(p_data.get('temp_nozzle'), 1) if p_data.get('temp_nozzle') is not None else None, 'time_elapsed': int(j_data.get('time_printing')) if j_data.get('time_printing') is not None else None, 'time_remaining': int(j_data.get('time_remaining')) if j_data.get('time_remaining') is not None else None}
+        resp = requests.get(
+            f"http://{p['ip']}/api/v1/status",
+            headers={'X-Api-Key': p['api_key']},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        status = resp.json()
+        printer = status.get('printer', {})
+        job = status.get('job', {})
+        state = printer.get('state', 'Unknown').title()
+        file_obj = job.get('file', {}) if job else {}
+        filename = (
+            file_obj.get('display_name')
+            or file_obj.get('name')
+            or file_obj.get('path')
+        )
+        return {
+            'state': state,
+            'filename': filename,
+            'progress': int(job.get('progress')) if job.get('progress') is not None else None,
+            'bed_temp': round(printer.get('temp_bed'), 1) if printer.get('temp_bed') is not None else None,
+            'nozzle_temp': round(printer.get('temp_nozzle'), 1) if printer.get('temp_nozzle') is not None else None,
+            'time_elapsed': int(job.get('time_printing')) if job.get('time_printing') is not None else None,
+            'time_remaining': int(job.get('time_remaining')) if job.get('time_remaining') is not None else None,
+        }
     except Exception as e:
         logging.error(f"PrusaLink fetch for '{p['name']}': {e}")
         return {'state': 'Offline', 'error': str(e)}
