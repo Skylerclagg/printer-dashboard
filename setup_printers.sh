@@ -1774,6 +1774,10 @@ cat > templates/kiosk.html << 'EOF'
                 }
                 kioskContainer.appendChild(slideDiv);
             });
+
+            // Restart slideshow at the first slide whenever we rebuild
+            currentSlideIndex = 0;
+            cycleSlide();
         }
         
         function cycleSlide() {
@@ -1816,13 +1820,9 @@ cat > templates/kiosk.html << 'EOF'
                 .done(data => {
                     const refreshInterval = (data.config.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    cycleSlide();
                     
                     setInterval(() => {
-                        $.getJSON('/status').done(data => {
-                            buildAndRenderSlides(data);
-                            cycleSlide();
-                        });
+                        $.getJSON('/status').done(buildAndRenderSlides);
                     }, refreshInterval);
                 })
                 .fail(() => {
