@@ -78,15 +78,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # --- CONFIGURATION ---------------------------------------------------------
-PRINTERS_FILE = 'printers.json'
-OVERRIDES_FILE = 'overrides.json'
-USERS_FILE = 'users.json'
-ROLES_FILE = 'roles.json'
-CONFIG_FILE = 'config.json'
-KIOSK_CONFIG_FILE = 'kiosk_config.json'
-LOG_FILE = 'activity.log'
-PRINTER_UPLOAD_FOLDER = 'static/printer_images'
-KIOSK_UPLOAD_FOLDER = 'static/kiosk_images'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PRINTERS_FILE = os.path.join(BASE_DIR, 'printers.json')
+OVERRIDES_FILE = os.path.join(BASE_DIR, 'overrides.json')
+USERS_FILE = os.path.join(BASE_DIR, 'users.json')
+ROLES_FILE = os.path.join(BASE_DIR, 'roles.json')
+CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
+KIOSK_CONFIG_FILE = os.path.join(BASE_DIR, 'kiosk_config.json')
+LOG_FILE = os.path.join(BASE_DIR, 'activity.log')
+PRINTER_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/printer_images')
+KIOSK_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/kiosk_images')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 CACHE_TTL = 5 # Lower TTL for more responsive status discovery
 HTTP_PORT = 8080
@@ -218,7 +219,7 @@ def fetch_prusalink_data(p):
         resp.raise_for_status()
         status = resp.json()
         printer = status.get('printer', {})
-        job_status = status.get('job', {})
+        job_status = status.get('job', {}) or {}
         state = printer.get('state', 'Unknown').title()
 
         file_obj = job_status.get('file', {}) if isinstance(job_status, dict) else {}
@@ -229,6 +230,27 @@ def fetch_prusalink_data(p):
             or job_status.get('filename')
             or file_obj.get('path')
         )
+
+        # If filename is not provided in status, fetch detailed job info
+        if not filename and job_status:
+            try:
+                job_resp = requests.get(
+                    f"http://{p['ip']}/api/v1/job",
+                    headers=headers,
+                    timeout=5,
+                )
+                if job_resp.status_code == 200:
+                    job_data = job_resp.json()
+                    file_obj = job_data.get('file', {}) if isinstance(job_data, dict) else {}
+                    filename = (
+                        file_obj.get('display_name')
+                        or file_obj.get('name')
+                        or job_data.get('file_name')
+                        or job_data.get('filename')
+                        or file_obj.get('path')
+                    )
+            except Exception as e:
+                logging.error(f"PrusaLink extra job fetch for '{p['name']}': {e}")
 
         return {
             'state': state,
@@ -1797,7 +1819,10 @@ cat > templates/kiosk.html << 'EOF'
                     cycleSlide();
                     
                     setInterval(() => {
-                        $.getJSON('/status').done(buildAndRenderSlides);
+                        $.getJSON('/status').done(data => {
+                            buildAndRenderSlides(data);
+                            cycleSlide();
+                        });
                     }, refreshInterval);
                 })
                 .fail(() => {
