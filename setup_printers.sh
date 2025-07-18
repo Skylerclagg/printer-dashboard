@@ -221,26 +221,14 @@ def fetch_prusalink_data(p):
         job_status = status.get('job', {})
         state = printer.get('state', 'Unknown').title()
 
-        filename = None
-        try:
-            job_resp = requests.get(
-                f"http://{p['ip']}/api/v1/job",
-                headers=headers,
-                timeout=5,
-            )
-            if job_resp.ok:
-                job_data = job_resp.json()
-                file_obj = job_data.get('file', {})
-                filename = (
-                    file_obj.get('display_name')
-                    or file_obj.get('name')
-                    or file_obj.get('filename')
-                    or file_obj.get('path')
-                    or job_data.get('file_name')
-                    or job_data.get('filename')
-                )
-        except Exception as je:
-            logging.warning(f"PrusaLink job fetch for '{p['name']}': {je}")
+        file_obj = job_status.get('file', {}) if isinstance(job_status, dict) else {}
+        filename = (
+            file_obj.get('display_name')
+            or file_obj.get('name')
+            or job_status.get('file_name')
+            or job_status.get('filename')
+            or file_obj.get('path')
+        )
 
         return {
             'state': state,
