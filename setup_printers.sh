@@ -151,7 +151,8 @@ def get_full_config():
 def get_kiosk_config():
     defaults = {
         "kiosk_printers_per_page": 6, "kiosk_printer_page_time": 10,
-        "kiosk_image_page_time": 5, "kiosk_image_frequency": 2, "kiosk_images": [],
+        "kiosk_image_page_time": 5, "kiosk_image_frequency": 2,
+        "kiosk_images_per_slot": 1, "kiosk_images": [],
         "kiosk_background_color": "#000000", "kiosk_sort_by": "manual",
         "kiosk_title": "", "kiosk_header_image": ""
     }
@@ -221,7 +222,10 @@ def fetch_prusalink_data(p):
         filename = (
             file_obj.get('display_name')
             or file_obj.get('name')
+            or file_obj.get('filename')
             or file_obj.get('path')
+            or job.get('file_name')
+            or job.get('filename')
         )
         return {
             'state': state,
@@ -254,7 +258,13 @@ def get_image_src(printer_config):
     return f"https://via.placeholder.com/400x200/dee2e6/6c757d?text={printer_config.get('name', 'Printer')}"
 
 def fetch_all(printers):
-    return {p['name']: {**fetch_printer(p), 'image_src': get_image_src(p)} for p in printers}
+    result = {}
+    for p in printers:
+        data = fetch_printer(p)
+        if not p.get('show_filename', True):
+            data['filename'] = None
+        result[p['name']] = {**data, 'image_src': get_image_src(p), 'show_filename': p.get('show_filename', True)}
+    return result
 
 # --- FLASK ROUTES ----------------------------------------------------------
 @app.route('/')
@@ -354,6 +364,7 @@ def manage_printers():
 
     if action == 'add_printer' and check_perm('add_printer'):
         new_printer = {k: request.form.get(k) for k in ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
+        new_printer['show_filename'] = 'show_filename' in request.form
         
         if 'image_file' in request.files:
             file = request.files['image_file']
@@ -391,6 +402,7 @@ def edit_printer(original_name):
         updated_data = printer_to_edit.copy()
         form_data = {k: request.form.get(k) for k in ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
         updated_data.update(form_data)
+        updated_data['show_filename'] = 'show_filename' in request.form
 
         if 'image_file' in request.files:
             file = request.files['image_file']
@@ -551,6 +563,7 @@ def manage_config():
         kiosk_config['kiosk_printer_page_time'] = int(request.form.get('kiosk_printer_page_time', 10))
         kiosk_config['kiosk_image_page_time'] = int(request.form.get('kiosk_image_page_time', 5))
         kiosk_config['kiosk_image_frequency'] = int(request.form.get('kiosk_image_frequency', 2))
+        kiosk_config['kiosk_images_per_slot'] = int(request.form.get('kiosk_images_per_slot', 1))
         
         kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
         kiosk_config['kiosk_sort_by'] = request.form.get('kiosk_sort_by', 'manual')
@@ -870,6 +883,9 @@ cat > templates/admin.html << 'EOF'
                             <input type="file" name="image_file" accept="image/*">
                             <small>Overrides Image URL if provided.</small>
                         </div>
+                        <div>
+                            <label><input type="checkbox" name="show_filename" checked> Display File Name</label>
+                        </div>
                     </div>
                     <button type="submit" style="margin-top: 1rem;">Add Printer</button>
                 </form>
@@ -1157,6 +1173,7 @@ cat > templates/admin.html << 'EOF'
                         {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
                         <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kiosk_config.kiosk_image_frequency }}" min="1"></div>
                         {% endif %}
+                        <div><label>Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kiosk_config.kiosk_images_per_slot }}" min="1"></div>
                         <div>
                             <label>Sort Kiosk By</label>
                             <select name="kiosk_sort_by">
@@ -1322,6 +1339,9 @@ cat > templates/edit_printer.html << 'EOF'
                     <label>Or Upload New Image (Optional)</label>
                     <input type="file" name="image_file" accept="image/*">
                     <small>Current file: <strong>{{ printer.get('local_image_filename', 'None') }}</strong>. Overrides URL.</small>
+                </div>
+                <div>
+                    <label><input type="checkbox" name="show_filename" {% if printer.show_filename != False %}checked{% endif %}> Display File Name</label>
                 </div>
             </div>
             <div style="margin-top: 2rem;">
@@ -1561,6 +1581,7 @@ cat > templates/kiosk.html << 'EOF'
         let slides = [];
         let currentSlideIndex = 0;
         let slideTimeout;
+        let imageIndex = 0;
         let globalConfig = {};
         let globalKioskConfig = {};
 
@@ -1595,7 +1616,8 @@ cat > templates/kiosk.html << 'EOF'
 
             const imgSrc = printerData.image_src || `https://via.placeholder.com/400x200/dee2e6/6c757d?text=${printerName}`;
             const statusColor = config.status_colors[stateKey] || '#6c757d';
-            const filenameHtml = printerData.filename ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
+            const showFile = printerData.show_filename !== false;
+            const filenameHtml = showFile && printerData.filename ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
 
             let timeHtml = '';
             if (state === 'Printing') {
@@ -1679,8 +1701,8 @@ cat > templates/kiosk.html << 'EOF'
 
             slides = [];
             const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
+            const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
             const images = globalKioskConfig.kiosk_images || [];
-            let imageIndex = 0;
             if (printerSlides.length === 0 && images.length > 0) {
                  images.forEach(image => {
                     slides.push({ isImage: true, url: image.url, time: image.time });
@@ -1689,9 +1711,11 @@ cat > templates/kiosk.html << 'EOF'
                 for (let i = 0; i < printerSlides.length; i++) {
                     slides.push(printerSlides[i]);
                     if (images.length > 0 && (i + 1) % imageFrequency === 0) {
-                        const image = images[imageIndex % images.length];
-                        slides.push({ isImage: true, url: image.url, time: image.time });
-                        imageIndex++;
+                        for (let j = 0; j < imagesPerSlot; j++) {
+                            const image = images[imageIndex % images.length];
+                            slides.push({ isImage: true, url: image.url, time: image.time });
+                            imageIndex++;
+                        }
                     }
                 }
             }
