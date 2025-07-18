@@ -206,35 +206,50 @@ def fetch_klipper_data(p):
         return {'state': 'Offline', 'error': str(e)}
 
 def fetch_prusalink_data(p):
-    if not p.get('ip') or not p.get('api_key'): return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
+    if not p.get('ip') or not p.get('api_key'):
+        return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
     try:
+        headers = {'X-Api-Key': p['api_key']}
         resp = requests.get(
             f"http://{p['ip']}/api/v1/status",
-            headers={'X-Api-Key': p['api_key']},
+            headers=headers,
             timeout=5,
         )
         resp.raise_for_status()
         status = resp.json()
         printer = status.get('printer', {})
-        job = status.get('job', {})
+        job_status = status.get('job', {})
         state = printer.get('state', 'Unknown').title()
-        file_obj = job.get('file', {}) if job else {}
-        filename = (
-            file_obj.get('display_name')
-            or file_obj.get('name')
-            or file_obj.get('filename')
-            or file_obj.get('path')
-            or job.get('file_name')
-            or job.get('filename')
-        )
+
+        filename = None
+        try:
+            job_resp = requests.get(
+                f"http://{p['ip']}/api/v1/job",
+                headers=headers,
+                timeout=5,
+            )
+            if job_resp.ok:
+                job_data = job_resp.json()
+                file_obj = job_data.get('file', {})
+                filename = (
+                    file_obj.get('display_name')
+                    or file_obj.get('name')
+                    or file_obj.get('filename')
+                    or file_obj.get('path')
+                    or job_data.get('file_name')
+                    or job_data.get('filename')
+                )
+        except Exception as je:
+            logging.warning(f"PrusaLink job fetch for '{p['name']}': {je}")
+
         return {
             'state': state,
             'filename': filename,
-            'progress': int(job.get('progress')) if job.get('progress') is not None else None,
+            'progress': int(job_status.get('progress')) if job_status.get('progress') is not None else None,
             'bed_temp': round(printer.get('temp_bed'), 1) if printer.get('temp_bed') is not None else None,
             'nozzle_temp': round(printer.get('temp_nozzle'), 1) if printer.get('temp_nozzle') is not None else None,
-            'time_elapsed': int(job.get('time_printing')) if job.get('time_printing') is not None else None,
-            'time_remaining': int(job.get('time_remaining')) if job.get('time_remaining') is not None else None,
+            'time_elapsed': int(job_status.get('time_printing')) if job_status.get('time_printing') is not None else None,
+            'time_remaining': int(job_status.get('time_remaining')) if job_status.get('time_remaining') is not None else None,
         }
     except Exception as e:
         logging.error(f"PrusaLink fetch for '{p['name']}': {e}")
