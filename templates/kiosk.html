@@ -154,16 +154,18 @@
             }
 
             let printerSlides = [];
-            const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
-            for (let i = 0; i < printerArray.length; i += printersPerPage) {
-                printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+            if (globalKioskConfig.show_printers !== false) {
+                const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
+                for (let i = 0; i < printerArray.length; i += printersPerPage) {
+                    printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+                }
             }
 
             slides = [];
             const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
             const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
             const images = globalKioskConfig.kiosk_images || [];
-            if (printerSlides.length === 0 && images.length > 0) {
+            if ((printerSlides.length === 0 || globalKioskConfig.show_printers === false) && images.length > 0) {
                  images.forEach(image => {
                     slides.push({ isImage: true, url: image.url, time: image.time });
                  });
@@ -182,7 +184,7 @@
             
             kioskContainer.innerHTML = '';
             if (slides.length === 0) {
-                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No printers to display.</h1>';
+                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No content to display.</h1>';
                 return;
             }
 

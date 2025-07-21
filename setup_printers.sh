@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# setup_printers.sh (v62 - User-Provided Kiosk Fix)
+# setup_printers.sh (v63 - Optional Printerless Kiosks)
 #
 # This script updates the printer aggregator application WITHOUT deleting existing data.
 # It will:
@@ -9,7 +9,7 @@
 # 3. FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
 #
 
-echo "--- Printer Aggregator Setup (v62 - User-Provided Kiosk Fix) ---"
+echo "--- Printer Aggregator Setup (v63 - Optional Printerless Kiosks) ---"
 
 # --- 1. Stop any existing server process ---
 echo "[*] Searching for and stopping any existing server process..."
@@ -50,7 +50,7 @@ echo "[*] Writing aggregator_with_ui.py..."
 cat > aggregator_with_ui.py << 'EOF'
 #!/usr/bin/env python3
 """
-aggregator_with_ui.py (v62 - User-Provided Kiosk Fix)
+aggregator_with_ui.py (v63 - Optional Printerless Kiosks)
 
 Flask app that:
  - Implements a granular, permission-based RBAC system.
@@ -60,11 +60,12 @@ Flask app that:
  - The admin panel now dynamically discovers all current printer statuses.
  - Aliased statuses are now hidden from the sort order list for a cleaner UI.
  - Status aliasing is now a dropdown and inherits the target color.
- - Kiosk permissions are more granular.
- - Dashboard and Kiosk views now re-sort automatically on data refresh.
- - Added a configurable refresh interval setting to the admin panel.
- - FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
- - All other features from previous versions are retained.
+- Kiosk permissions are more granular.
+- Dashboard and Kiosk views now re-sort automatically on data refresh.
+- Added a configurable refresh interval setting to the admin panel.
+- FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
+- Kiosks can now be created without printer slides for image-only displays.
+- All other features from previous versions are retained.
 """
 
 import os
@@ -168,7 +169,8 @@ DEFAULT_KIOSK_CONFIG = {
     "kiosk_sort_by": "manual",
     "kiosk_title": "",
     "kiosk_header_image": "",
-    "kiosk_header_height_px": 150
+    "kiosk_header_height_px": 150,
+    "show_printers": True
 }
 
 def get_kiosk_config(kiosk_id='default'):
@@ -183,6 +185,8 @@ def get_kiosk_config(kiosk_id='default'):
 
     config = DEFAULT_KIOSK_CONFIG.copy()
     config.update(user_config)
+    if 'show_printers' not in config:
+        config['show_printers'] = True
     return config
 
 def list_kiosk_configs():
@@ -632,6 +636,8 @@ def manage_config():
         kiosk_config['kiosk_image_frequency'] = int(request.form.get('kiosk_image_frequency', 2))
         kiosk_config['kiosk_images_per_slot'] = int(request.form.get('kiosk_images_per_slot', 1))
 
+        kiosk_config['show_printers'] = bool(request.form.get('show_printers'))
+
         kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
         kiosk_config['kiosk_sort_by'] = request.form.get('kiosk_sort_by', 'manual')
         kiosk_config['kiosk_title'] = request.form.get('kiosk_title', '')
@@ -747,6 +753,7 @@ def manage_kiosks():
         else:
             config = DEFAULT_KIOSK_CONFIG.copy()
             config['name'] = request.form.get('kiosk_name', kiosk_id)
+            config['show_printers'] = bool(request.form.get('show_printers'))
             save_data(config, path)
             flash('Kiosk added.', 'success')
     elif action == 'delete_kiosk':
@@ -1295,6 +1302,7 @@ cat > templates/admin.html << 'EOF'
                         <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
                         <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
                         <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" min="1"></div>
+                        <div><label><input type="checkbox" name="show_printers" {% if kconf.show_printers %}checked{% endif %}> Show Printer Slides</label></div>
                         {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
                         <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>
                         {% endif %}
@@ -1362,6 +1370,7 @@ cat > templates/admin.html << 'EOF'
                 <div class="form-grid">
                     <div><label>Kiosk ID</label><input type="text" name="kiosk_id" required></div>
                     <div><label>Display Name</label><input type="text" name="kiosk_name" required></div>
+                    <div><label><input type="checkbox" name="show_printers" checked> Show Printer Slides</label></div>
                 </div>
                 <button type="submit" style="margin-top:1rem;">Add Kiosk</button>
             </form>
@@ -1843,16 +1852,18 @@ cat > templates/kiosk.html << 'EOF'
             }
 
             let printerSlides = [];
-            const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
-            for (let i = 0; i < printerArray.length; i += printersPerPage) {
-                printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+            if (globalKioskConfig.show_printers !== false) {
+                const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
+                for (let i = 0; i < printerArray.length; i += printersPerPage) {
+                    printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+                }
             }
 
             slides = [];
             const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
             const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
             const images = globalKioskConfig.kiosk_images || [];
-            if (printerSlides.length === 0 && images.length > 0) {
+            if ((printerSlides.length === 0 || globalKioskConfig.show_printers === false) && images.length > 0) {
                  images.forEach(image => {
                     slides.push({ isImage: true, url: image.url, time: image.time });
                  });
@@ -1871,7 +1882,7 @@ cat > templates/kiosk.html << 'EOF'
             
             kioskContainer.innerHTML = '';
             if (slides.length === 0) {
-                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No printers to display.</h1>';
+                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No content to display.</h1>';
                 return;
             }
 

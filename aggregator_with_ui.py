@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-aggregator_with_ui.py (v62 - User-Provided Kiosk Fix)
+aggregator_with_ui.py (v63 - Optional Printerless Kiosks)
 
 Flask app that:
  - Implements a granular, permission-based RBAC system.
@@ -10,11 +10,12 @@ Flask app that:
  - The admin panel now dynamically discovers all current printer statuses.
  - Aliased statuses are now hidden from the sort order list for a cleaner UI.
  - Status aliasing is now a dropdown and inherits the target color.
- - Kiosk permissions are more granular.
- - Dashboard and Kiosk views now re-sort automatically on data refresh.
- - Added a configurable refresh interval setting to the admin panel.
- - FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
- - All other features from previous versions are retained.
+- Kiosk permissions are more granular.
+- Dashboard and Kiosk views now re-sort automatically on data refresh.
+- Added a configurable refresh interval setting to the admin panel.
+- FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
+- Kiosks can now be created without printer slides for image-only displays.
+- All other features from previous versions are retained.
 """
 
 import os
@@ -118,7 +119,8 @@ DEFAULT_KIOSK_CONFIG = {
     "kiosk_sort_by": "manual",
     "kiosk_title": "",
     "kiosk_header_image": "",
-    "kiosk_header_height_px": 150
+    "kiosk_header_height_px": 150,
+    "show_printers": True
 }
 
 def get_kiosk_config(kiosk_id='default'):
@@ -133,6 +135,8 @@ def get_kiosk_config(kiosk_id='default'):
 
     config = DEFAULT_KIOSK_CONFIG.copy()
     config.update(user_config)
+    if 'show_printers' not in config:
+        config['show_printers'] = True
     return config
 
 def list_kiosk_configs():
@@ -582,6 +586,8 @@ def manage_config():
         kiosk_config['kiosk_image_frequency'] = int(request.form.get('kiosk_image_frequency', 2))
         kiosk_config['kiosk_images_per_slot'] = int(request.form.get('kiosk_images_per_slot', 1))
 
+        kiosk_config['show_printers'] = bool(request.form.get('show_printers'))
+
         kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
         kiosk_config['kiosk_sort_by'] = request.form.get('kiosk_sort_by', 'manual')
         kiosk_config['kiosk_title'] = request.form.get('kiosk_title', '')
@@ -697,6 +703,7 @@ def manage_kiosks():
         else:
             config = DEFAULT_KIOSK_CONFIG.copy()
             config['name'] = request.form.get('kiosk_name', kiosk_id)
+            config['show_printers'] = bool(request.form.get('show_printers'))
             save_data(config, path)
             flash('Kiosk added.', 'success')
     elif action == 'delete_kiosk':

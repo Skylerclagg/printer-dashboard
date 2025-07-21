@@ -440,6 +440,7 @@
                         <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
                         <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
                         <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" min="1"></div>
+                        <div><label><input type="checkbox" name="show_printers" {% if kconf.show_printers %}checked{% endif %}> Show Printer Slides</label></div>
                         {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
                         <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>
                         {% endif %}
@@ -507,6 +508,7 @@
                 <div class="form-grid">
                     <div><label>Kiosk ID</label><input type="text" name="kiosk_id" required></div>
                     <div><label>Display Name</label><input type="text" name="kiosk_name" required></div>
+                    <div><label><input type="checkbox" name="show_printers" checked> Show Printer Slides</label></div>
                 </div>
                 <button type="submit" style="margin-top:1rem;">Add Kiosk</button>
             </form>
