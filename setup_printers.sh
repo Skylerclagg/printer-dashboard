@@ -1775,8 +1775,10 @@ cat > templates/kiosk.html << 'EOF'
                 kioskContainer.appendChild(slideDiv);
             });
 
-            // Restart slideshow at the first slide whenever we rebuild
-            currentSlideIndex = 0;
+            // Continue slideshow from the previous slide when rebuilding
+            if (currentSlideIndex >= slides.length) {
+                currentSlideIndex = 0;
+            }
             cycleSlide();
         }
         
