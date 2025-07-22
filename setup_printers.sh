@@ -918,22 +918,20 @@ cat > templates/admin.html << 'EOF'
         {% endif %}{% endwith %}
 
         <div class="nav-tabs">
-            <button class="tab-button active" onclick="showTab(event, 'printers')">Printers</button>
-            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'users')">User Management</button>{% endif %}
-            {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'roles')">Role Management</button>{% endif %}
-            {% if 'manage_config' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'config')">Configuration</button>{% endif %}
-            {% for kid, kc in kiosk_configs.items() %}
-                {% set perm = 'manage_kiosk_' + kid %}
-                {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
-                <button class="tab-button" onclick="showTab(event, 'kiosk-{{ kid }}')">{{ kc.name }}</button>{% endif %}
-            {% endfor %}
-            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
-                <button class="tab-button" onclick="showTab(event, 'add-kiosk')">Add Kiosk</button>
+            <button class="tab-button active" onclick="showTab(event, 'printer-config')">Printer Config</button>
+            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or 'manage_roles' in roles[session.role]['permissions'] %}
+            <button class="tab-button" onclick="showTab(event, 'user-role')">User / Role Management</button>
             {% endif %}
-            {% if 'view_logs' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'logs')">Logs</button>{% endif %}
+            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <button class="tab-button" onclick="showTab(event, 'kiosk-management')">Kiosk Management</button>
+            <button class="tab-button" onclick="showTab(event, 'kiosk-control')">Kiosk Control</button>
+            {% endif %}
+            {% if 'view_logs' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <button class="tab-button" onclick="showTab(event, 'logs')">Logs</button>
+            {% endif %}
         </div>
 
-        <div id="printers" class="tab-content active">
+        <div id="printer-config" class="tab-content active">
             <h2>Manage Printers</h2>
             <table>
                 <thead><tr><th>Name</th><th>Type</th><th>Connection Info</th><th>Manual Override</th><th>Actions</th></tr></thead>
@@ -1021,7 +1019,7 @@ cat > templates/admin.html << 'EOF'
             {% endif %}
         </div>
 
-        <div id="users" class="tab-content">
+        <div id="user-role" class="tab-content">
             {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
             <h2>User Management</h2>
             <table>
@@ -1094,7 +1092,7 @@ cat > templates/admin.html << 'EOF'
             {% endif %}
         </div>
 
-        <div id="roles" class="tab-content">
+        <div class="role-management">
             {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
             <h2>Role Management</h2>
             <table>
@@ -1288,82 +1286,89 @@ cat > templates/admin.html << 'EOF'
             {% endif %}
         </div>
 
-        {% for kid, kconf in kiosk_configs.items() %}
-        <div id="kiosk-{{ kid }}" class="tab-content{% if loop.first %} active{% endif %}">
-            {% set perm = 'manage_kiosk_' + kid %}
-            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
-            <h2>Kiosk Mode Settings - {{ kconf.name }}</h2>
-            <div class="form-section">
-                <form action="{{ url_for('manage_config') }}" method="POST" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="update_kiosk">
-                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
-                    <div class="form-grid">
-                        <div><label>Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}"></div>
-                        <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
-                        <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
-                        <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" min="1"></div>
-                        <div><label><input type="checkbox" name="show_printers" {% if kconf.show_printers %}checked{% endif %}> Show Printer Slides</label></div>
-                        {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
-                        <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>
-                        {% endif %}
-                        <div><label>Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kconf.kiosk_images_per_slot }}" min="1"></div>
-                        <div>
-                            <label>Sort Kiosk By</label>
-                            <select name="kiosk_sort_by">
-                                <option value="manual" {% if kconf.kiosk_sort_by == 'manual' %}selected{% endif %}>Manual</option>
-                                <option value="status" {% if kconf.kiosk_sort_by == 'status' %}selected{% endif %}>Status</option>
-                            </select>
+{% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+        <div id="kiosk-control" class="tab-content">
+            <label for="kiosk-select"><strong>Select Kiosk:</strong></label>
+            <select id="kiosk-select" onchange="displayKioskSettings(this.value)">
+                {% for kid, kc in kiosk_configs.items() %}
+                <option value="{{ kid }}">{{ kc.name }}</option>
+                {% endfor %}
+            </select>
+            {% for kid, kconf in kiosk_configs.items() %}
+            <div id="kiosk-{{ kid }}" class="kiosk-settings"{% if loop.first %} style="display:block;"{% else %} style="display:none;"{% endif %}>
+                <h2>Kiosk Mode Settings - {{ kconf.name }}</h2>
+                <div class="form-section">
+                    <form action="{{ url_for('manage_config') }}" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="action" value="update_kiosk">
+                        <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                        <div class="form-grid">
+                            <div><label>Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}"></div>
+                            <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
+                            <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
+                            <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" min="1"></div>
+                            <div><label><input type="checkbox" name="show_printers" {% if kconf.show_printers %}checked{% endif %}> Show Printer Slides</label></div>
+                            {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                            <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>
+                            {% endif %}
+                            <div><label>Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kconf.kiosk_images_per_slot }}" min="1"></div>
+                            <div>
+                                <label>Sort Kiosk By</label>
+                                <select name="kiosk_sort_by">
+                                    <option value="manual" {% if kconf.kiosk_sort_by == 'manual' %}selected{% endif %}>Manual</option>
+                                    <option value="status" {% if kconf.kiosk_sort_by == 'status' %}selected{% endif %}>Status</option>
+                                </select>
+                            </div>
+                            <div><label>Kiosk Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}"></div>
+                            <div><label>Header Height (px)</label><input type="number" name="kiosk_header_height_px" value="{{ kconf.kiosk_header_height_px }}" min="10"></div>
                         </div>
-                        <div><label>Kiosk Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}"></div>
-                        <div><label>Header Height (px)</label><input type="number" name="kiosk_header_height_px" value="{{ kconf.kiosk_header_height_px }}" min="10"></div>
-                    </div>
-                    <div style="margin-top: 1.5rem;">
-                        <label>Kiosk Title</label>
-                        <input type="text" name="kiosk_title" value="{{ kconf.kiosk_title }}">
-                    </div>
-                    <div style="margin-top: 1rem;">
-                        <label>Kiosk Header Image</label>
-                        <input type="file" name="kiosk_header_image_file" accept="image/*">
-                        <small>Current: {{ kconf.kiosk_header_image or 'None' }}</small>
-                    </div>
-                    <button type="submit" style="margin-top: 1rem;">Save Kiosk Settings</button>
-                </form>
-                {% if kid != 'default' %}
-                <form action="{{ url_for('manage_kiosks') }}" method="POST" onsubmit="return confirm('Delete this kiosk?');" style="margin-top:0.5rem;">
-                    <input type="hidden" name="action" value="delete_kiosk">
-                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
-                    <button type="submit" class="delete">Delete Kiosk</button>
-                </form>
-                {% endif %}
-            </div>
-            <div class="form-section">
-                <h3>Manage Kiosk Images</h3>
-                <form action="{{ url_for('manage_kiosk_images') }}" method="POST" enctype="multipart/form-data">
-                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
-                    <div id="kiosk-image-list">
-                        {% for image in kconf.kiosk_images %}
-                        <div class="kiosk-image-item">
-                            <input type="hidden" name="url_{{ loop.index0 }}" value="{{ image.url }}">
-                            <input type="text" value="{{ image.url.split('/')[-1] }}" readonly>
-                            <input type="number" name="time_{{ loop.index0 }}" value="{{ image.time }}" min="1">
-                            <label>sec</label>
-                            <button type="submit" name="remove_{{ loop.index0 }}" class="delete">Remove</button>
+                        <div style="margin-top: 1.5rem;">
+                            <label>Kiosk Title</label>
+                            <input type="text" name="kiosk_title" value="{{ kconf.kiosk_title }}">
                         </div>
-                        {% endfor %}
-                    </div>
-                    <div style="margin-top: 1rem;">
-                        <label>Upload New Images</label>
-                        <input type="file" name="kiosk_image_files" accept="image/*" multiple>
-                        <small>You can select multiple images. They will be added to the slideshow with the default time.</small>
-                    </div>
-                    <button type="submit" style="margin-top: 1rem;">Save Changes & Upload</button>
-                </form>
+                        <div style="margin-top: 1rem;">
+                            <label>Kiosk Header Image</label>
+                            <input type="file" name="kiosk_header_image_file" accept="image/*">
+                            <small>Current: {{ kconf.kiosk_header_image or 'None' }}</small>
+                        </div>
+                        <button type="submit" style="margin-top: 1rem;">Save Kiosk Settings</button>
+                    </form>
+                    {% if kid != 'default' %}
+                    <form action="{{ url_for('manage_kiosks') }}" method="POST" onsubmit="return confirm('Delete this kiosk?');" style="margin-top:0.5rem;">
+                        <input type="hidden" name="action" value="delete_kiosk">
+                        <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                        <button type="submit" class="delete">Delete Kiosk</button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="form-section">
+                    <h3>Manage Kiosk Images</h3>
+                    <form action="{{ url_for('manage_kiosk_images') }}" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                        <div id="kiosk-image-list">
+                            {% for image in kconf.kiosk_images %}
+                            <div class="kiosk-image-item">
+                                <input type="hidden" name="url_{{ loop.index0 }}" value="{{ image.url }}">
+                                <input type="text" value="{{ image.url.split('/')[-1] }}" readonly>
+                                <input type="number" name="time_{{ loop.index0 }}" value="{{ image.time }}" min="1">
+                                <label>sec</label>
+                                <button type="submit" name="remove_{{ loop.index0 }}" class="delete">Remove</button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <label>Upload New Images</label>
+                            <input type="file" name="kiosk_image_files" accept="image/*" multiple>
+                            <small>You can select multiple images. They will be added to the slideshow with the default time.</small>
+                        </div>
+                        <button type="submit" style="margin-top: 1rem;">Save Changes & Upload</button>
+                    </form>
+                </div>
             </div>
-            {% endif %}
+            {% endfor %}
         </div>
-        {% endfor %}
-        {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
-        <div class="tab-content" id="add-kiosk">
+{% endif %}
+{% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+        <div id="kiosk-management" class="tab-content">
             <h2>Create New Kiosk</h2>
             <form action="{{ url_for('manage_kiosks') }}" method="POST">
                 <input type="hidden" name="action" value="add_kiosk">
@@ -1375,7 +1380,7 @@ cat > templates/admin.html << 'EOF'
                 <button type="submit" style="margin-top:1rem;">Add Kiosk</button>
             </form>
         </div>
-        {% endif %}
+{% endif %}
         <div id="logs" class="tab-content">
             <h2>Activity Log</h2>
             <pre id="log-viewer">{{ log_content }}</pre>
@@ -1429,6 +1434,12 @@ cat > templates/admin.html << 'EOF'
         }
         document.getElementById('add-printer-type').addEventListener('change', handleAddFormDisplay);
         document.addEventListener('DOMContentLoaded', handleAddFormDisplay);
+
+        function displayKioskSettings(kid) {
+            document.querySelectorAll('.kiosk-settings').forEach(div => div.style.display = 'none');
+            const target = document.getElementById('kiosk-' + kid);
+            if (target) target.style.display = 'block';
+        }
     </script>
 </body>
 </html>
