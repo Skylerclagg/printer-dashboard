@@ -56,19 +56,19 @@
         {% endif %}{% endwith %}
 
         <div class="nav-tabs">
-            <button class="tab-button active" onclick="showTab('printers')">Printers</button>
-            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('users')">User Management</button>{% endif %}
-            {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('roles')">Role Management</button>{% endif %}
-            {% if 'manage_config' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('config')">Configuration</button>{% endif %}
+            <button class="tab-button active" onclick="showTab(event, 'printers')">Printers</button>
+            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'users')">User Management</button>{% endif %}
+            {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'roles')">Role Management</button>{% endif %}
+            {% if 'manage_config' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'config')">Configuration</button>{% endif %}
             {% for kid, kc in kiosk_configs.items() %}
                 {% set perm = 'manage_kiosk_' + kid %}
                 {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
-                <button class="tab-button" onclick="showTab('kiosk-{{ kid }}')">{{ kc.name }}</button>{% endif %}
+                <button class="tab-button" onclick="showTab(event, 'kiosk-{{ kid }}')">{{ kc.name }}</button>{% endif %}
             {% endfor %}
             {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
-                <button class="tab-button" onclick="showTab('add-kiosk')">Add Kiosk</button>
+                <button class="tab-button" onclick="showTab(event, 'add-kiosk')">Add Kiosk</button>
             {% endif %}
-            {% if 'view_logs' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('logs')">Logs</button>{% endif %}
+            {% if 'view_logs' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab(event, 'logs')">Logs</button>{% endif %}
         </div>
 
         <div id="printers" class="tab-content active">
@@ -520,11 +520,13 @@
         </div>
     </div>
     <script>
-        function showTab(tabName) {
+        function showTab(evt, tabName) {
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
             document.getElementById(tabName).classList.add('active');
-            event.currentTarget.classList.add('active');
+            if (evt && evt.currentTarget) {
+                evt.currentTarget.classList.add('active');
+            }
         }
 
         const sortablePrinters = document.getElementById('sortable-printers');
