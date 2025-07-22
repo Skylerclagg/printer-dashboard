@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# setup_printers.sh (v62 - User-Provided Kiosk Fix)
+# setup_printers.sh (v63 - Optional Printerless Kiosks)
 #
 # This script updates the printer aggregator application WITHOUT deleting existing data.
 # It will:
@@ -9,7 +9,7 @@
 # 3. FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
 #
 
-echo "--- Printer Aggregator Setup (v62 - User-Provided Kiosk Fix) ---"
+echo "--- Printer Aggregator Setup (v63 - Optional Printerless Kiosks) ---"
 
 # --- 1. Stop any existing server process ---
 echo "[*] Searching for and stopping any existing server process..."
@@ -25,6 +25,15 @@ fi
 echo "[*] Removing old log file. Your user and printer data will be preserved."
 rm -f activity.log
 echo "    > Old log file removed."
+
+# Ensure required Python packages are installed
+if ! python3 - <<'EOF' >/dev/null 2>&1
+import flask, requests, werkzeug
+EOF
+then
+    echo "[*] Installing required Python packages..."
+    pip install --quiet flask requests werkzeug
+fi
 
 # Backup existing config file before overwriting
 if [ -f config.json ]; then
@@ -50,7 +59,7 @@ echo "[*] Writing aggregator_with_ui.py..."
 cat > aggregator_with_ui.py << 'EOF'
 #!/usr/bin/env python3
 """
-aggregator_with_ui.py (v62 - User-Provided Kiosk Fix)
+aggregator_with_ui.py (v63 - Optional Printerless Kiosks)
 
 Flask app that:
  - Implements a granular, permission-based RBAC system.
@@ -60,11 +69,12 @@ Flask app that:
  - The admin panel now dynamically discovers all current printer statuses.
  - Aliased statuses are now hidden from the sort order list for a cleaner UI.
  - Status aliasing is now a dropdown and inherits the target color.
- - Kiosk permissions are more granular.
- - Dashboard and Kiosk views now re-sort automatically on data refresh.
- - Added a configurable refresh interval setting to the admin panel.
- - FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
- - All other features from previous versions are retained.
+- Kiosk permissions are more granular.
+- Dashboard and Kiosk views now re-sort automatically on data refresh.
+- Added a configurable refresh interval setting to the admin panel.
+- FIX: Implemented user-provided JavaScript logic for a robust, cycling kiosk view.
+- Kiosks can now be created without printer slides for image-only displays.
+- All other features from previous versions are retained.
 """
 
 import os
@@ -78,25 +88,33 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # --- CONFIGURATION ---------------------------------------------------------
-PRINTERS_FILE = 'printers.json'
-OVERRIDES_FILE = 'overrides.json'
-USERS_FILE = 'users.json'
-ROLES_FILE = 'roles.json'
-CONFIG_FILE = 'config.json'
-KIOSK_CONFIG_FILE = 'kiosk_config.json'
-LOG_FILE = 'activity.log'
-PRINTER_UPLOAD_FOLDER = 'static/printer_images'
-KIOSK_UPLOAD_FOLDER = 'static/kiosk_images'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PRINTERS_FILE = os.path.join(BASE_DIR, 'printers.json')
+OVERRIDES_FILE = os.path.join(BASE_DIR, 'overrides.json')
+USERS_FILE = os.path.join(BASE_DIR, 'users.json')
+ROLES_FILE = os.path.join(BASE_DIR, 'roles.json')
+CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
+KIOSK_DIR = os.path.join(BASE_DIR, 'kiosks')
+KIOSK_CONFIG_FILE = os.path.join(KIOSK_DIR, 'default.json')
+LOG_FILE = os.path.join(BASE_DIR, 'activity.log')
+PRINTER_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/printer_images')
+KIOSK_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/kiosk_images')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 CACHE_TTL = 5 # Lower TTL for more responsive status discovery
-HTTP_PORT = 8080
+HTTP_PORT = 80
 
-AVAILABLE_PERMISSIONS = [
-    'view_dashboard', 'set_overrides', 'view_logs', 
+BASE_PERMISSIONS = [
+    'view_dashboard', 'set_overrides', 'view_logs',
     'add_printer', 'edit_printer', 'delete_printer',
     'add_user', 'delete_user', 'change_user_password', 'change_user_role',
     'manage_roles', 'manage_config', 'manage_kiosk', 'manage_kiosk_frequency'
 ]
+
+def get_available_permissions():
+    kiosks = []
+    if os.path.isdir(KIOSK_DIR):
+        kiosks = [f.split('.')[0] for f in os.listdir(KIOSK_DIR) if f.endswith('.json')]
+    return BASE_PERMISSIONS + [f'manage_kiosk_{k}' for k in kiosks if k != 'default']
 
 app = Flask(__name__)
 app.secret_key = 'a-very-secret-and-random-key-that-you-should-change'
@@ -148,22 +166,47 @@ def get_full_config():
     full_config.update(user_config)
     return full_config
 
-def get_kiosk_config():
-    defaults = {
-        "kiosk_printers_per_page": 6, "kiosk_printer_page_time": 10,
-        "kiosk_image_page_time": 5, "kiosk_image_frequency": 2, "kiosk_images": [],
-        "kiosk_background_color": "#000000", "kiosk_sort_by": "manual",
-        "kiosk_title": "", "kiosk_header_image": ""
-    }
-    user_config = load_data(KIOSK_CONFIG_FILE, defaults)
-    
+DEFAULT_KIOSK_CONFIG = {
+    "name": "Main Kiosk",
+    "kiosk_printers_per_page": 6,
+    "kiosk_printer_page_time": 10,
+    "kiosk_image_page_time": 5,
+    "kiosk_image_frequency": 2,
+    "kiosk_images_per_slot": 1,
+    "kiosk_images": [],
+    "kiosk_background_color": "#000000",
+    "kiosk_sort_by": "manual",
+    "kiosk_title": "",
+    "kiosk_header_image": "",
+    "kiosk_header_height_px": 150,
+    "show_printers": True
+}
+
+def get_kiosk_config(kiosk_id='default'):
+    if not os.path.isdir(KIOSK_DIR):
+        os.makedirs(KIOSK_DIR, exist_ok=True)
+    config_path = os.path.join(KIOSK_DIR, f"{kiosk_id}.json")
+    user_config = load_data(config_path, DEFAULT_KIOSK_CONFIG)
+
     if user_config.get('kiosk_images') and all(isinstance(img, str) for img in user_config['kiosk_images']):
         default_time = user_config.get('kiosk_image_page_time', 5)
         user_config['kiosk_images'] = [{'url': url, 'time': default_time} for url in user_config['kiosk_images']]
 
-    full_config = defaults.copy()
-    full_config.update(user_config)
-    return full_config
+    config = DEFAULT_KIOSK_CONFIG.copy()
+    config.update(user_config)
+    if 'show_printers' not in config:
+        config['show_printers'] = True
+    return config
+
+def list_kiosk_configs():
+    if not os.path.isdir(KIOSK_DIR):
+        os.makedirs(KIOSK_DIR, exist_ok=True)
+    kiosks = {}
+    for file in os.listdir(KIOSK_DIR):
+        if file.endswith('.json'):
+            kid = file.split('.')[0]
+            kiosks[kid] = get_kiosk_config(kid)
+    return kiosks
 
 def require_permission(permission):
     def decorator(f):
@@ -205,17 +248,39 @@ def fetch_klipper_data(p):
         return {'state': 'Offline', 'error': str(e)}
 
 def fetch_prusalink_data(p):
-    if not p.get('ip') or not p.get('api_key'): return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
+    if not p.get('ip') or not p.get('api_key'):
+        return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
     try:
-        r = requests.get(f"http://{p['ip']}/api/v1/status", headers={'X-Api-Key': p['api_key']}, timeout=5)
-        r.raise_for_status()
-        data = r.json()
-        p_data, j_data = data.get('printer', {}), data.get('job', {})
-        state = p_data.get('state', 'Unknown').title()
-        filename = None
-        file_obj = j_data.get('file', {}) if j_data else {}
-        filename = file_obj.get('display_name') or file_obj.get('name') or file_obj.get('path')
-        return {'state': state, 'filename': filename, 'progress': int(j_data.get('progress')) if j_data.get('progress') is not None else None, 'bed_temp': round(p_data.get('temp_bed'), 1) if p_data.get('temp_bed') is not None else None, 'nozzle_temp': round(p_data.get('temp_nozzle'), 1) if p_data.get('temp_nozzle') is not None else None, 'time_elapsed': int(j_data.get('time_printing')) if j_data.get('time_printing') is not None else None, 'time_remaining': int(j_data.get('time_remaining')) if j_data.get('time_remaining') is not None else None}
+        headers = {'X-Api-Key': p['api_key']}
+        resp = requests.get(
+            f"http://{p['ip']}/api/v1/status",
+            headers=headers,
+            timeout=5,
+        )
+        resp.raise_for_status()
+        status = resp.json()
+        printer = status.get('printer', {})
+        job_status = status.get('job', {}) or {}
+        state = printer.get('state', 'Unknown').title()
+
+        file_obj = job_status.get('file', {}) if isinstance(job_status, dict) else {}
+        filename = (
+            file_obj.get('display_name')
+            or file_obj.get('name')
+            or job_status.get('file_name')
+            or job_status.get('filename')
+            or file_obj.get('path')
+        )
+
+        return {
+            'state': state,
+            'filename': filename,
+            'progress': int(job_status.get('progress')) if job_status.get('progress') is not None else None,
+            'bed_temp': round(printer.get('temp_bed'), 1) if printer.get('temp_bed') is not None else None,
+            'nozzle_temp': round(printer.get('temp_nozzle'), 1) if printer.get('temp_nozzle') is not None else None,
+            'time_elapsed': int(job_status.get('time_printing')) if job_status.get('time_printing') is not None else None,
+            'time_remaining': int(job_status.get('time_remaining')) if job_status.get('time_remaining') is not None else None,
+        }
     except Exception as e:
         logging.error(f"PrusaLink fetch for '{p['name']}': {e}")
         return {'state': 'Offline', 'error': str(e)}
@@ -238,11 +303,19 @@ def get_image_src(printer_config):
     return f"https://via.placeholder.com/400x200/dee2e6/6c757d?text={printer_config.get('name', 'Printer')}"
 
 def fetch_all(printers):
-    return {p['name']: {**fetch_printer(p), 'image_src': get_image_src(p)} for p in printers}
+    result = {}
+    for p in printers:
+        data = fetch_printer(p)
+        if not p.get('show_filename', True):
+            data['filename'] = None
+        result[p['name']] = {**data, 'image_src': get_image_src(p), 'show_filename': p.get('show_filename', True)}
+    return result
 
 # --- FLASK ROUTES ----------------------------------------------------------
 @app.route('/')
-def root(): return redirect(url_for('dashboard'))
+def root():
+    """Serve the dashboard when no route is specified."""
+    return dashboard()
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -280,9 +353,10 @@ def get_status_data():
 
 @app.route('/status')
 def status():
+    kiosk_id = request.args.get('kiosk', 'default')
     status_data = get_status_data()
     config = get_full_config()
-    kiosk_config = get_kiosk_config()
+    kiosk_config = get_kiosk_config(kiosk_id)
     overrides = load_data(OVERRIDES_FILE, {})
     aliases = config.get('status_aliases', {})
 
@@ -307,7 +381,8 @@ def admin():
     users = load_data(USERS_FILE, {})
     roles = load_data(ROLES_FILE, {})
     config = get_full_config()
-    kiosk_config = get_kiosk_config()
+    kiosk_configs = list_kiosk_configs()
+    kiosk_config = kiosk_configs.get('default', DEFAULT_KIOSK_CONFIG)
     
     # Always fetch fresh data for the admin page to discover all statuses
     live_statuses = fetch_all(printers)
@@ -321,11 +396,33 @@ def admin():
             all_statuses.add(printer_data['state'])
 
     log_content = ""
-    if 'view_logs' in roles.get(session.get('role'), {}).get('permissions', []) or '*' in roles.get(session.get('role'), {}).get('permissions', []):
+    user_role = session.get('role')
+    user_permissions = roles.get(user_role, {}).get('permissions', [])
+    if 'view_logs' in user_permissions or '*' in user_permissions:
         try:
             with open(LOG_FILE, 'r') as f: log_content = f.read()
         except FileNotFoundError: log_content = "Log file not found."
-    return render_template('admin.html', printers=printers, overrides=overrides, users=users, roles=roles, config=config, kiosk_config=kiosk_config, manual_statuses=config.get('manual_statuses', []), all_statuses=sorted(list(all_statuses)), available_permissions=AVAILABLE_PERMISSIONS, log_content=log_content)
+    perms = get_available_permissions()
+    can_add_kiosk = (
+        '*' in user_permissions
+        or 'manage_kiosk' in user_permissions
+        or any(p.startswith('manage_kiosk_') for p in user_permissions)
+    )
+    return render_template(
+        'admin.html',
+        printers=printers,
+        overrides=overrides,
+        users=users,
+        roles=roles,
+        config=config,
+        kiosk_config=kiosk_config,
+        kiosk_configs=kiosk_configs,
+        manual_statuses=config.get('manual_statuses', []),
+        all_statuses=sorted(list(all_statuses)),
+        available_permissions=perms,
+        log_content=log_content,
+        can_add_kiosk=can_add_kiosk,
+    )
 
 @app.route('/admin/printers', methods=['POST'])
 def manage_printers():
@@ -338,6 +435,7 @@ def manage_printers():
 
     if action == 'add_printer' and check_perm('add_printer'):
         new_printer = {k: request.form.get(k) for k in ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
+        new_printer['show_filename'] = 'show_filename' in request.form
         
         if 'image_file' in request.files:
             file = request.files['image_file']
@@ -375,6 +473,7 @@ def edit_printer(original_name):
         updated_data = printer_to_edit.copy()
         form_data = {k: request.form.get(k) for k in ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
         updated_data.update(form_data)
+        updated_data['show_filename'] = 'show_filename' in request.form
 
         if 'image_file' in request.files:
             file = request.files['image_file']
@@ -502,15 +601,22 @@ def edit_role(role_name):
         save_data(roles, ROLES_FILE)
         flash(f"Role '{role_name}' updated.", 'success')
         return redirect(url_for('admin'))
-    return render_template('edit_role.html', role_name=role_name, role_data=role_to_edit, available_permissions=AVAILABLE_PERMISSIONS)
+    perms = get_available_permissions()
+    return render_template('edit_role.html', role_name=role_name, role_data=role_to_edit, available_permissions=perms)
 
 @app.route('/admin/config', methods=['POST'])
-@require_permission('manage_config')
 def manage_config():
+    roles = load_data(ROLES_FILE, {})
+    user_perms = roles.get(session.get('role'), {}).get('permissions', [])
+    def has_perm(p):
+        return p in user_perms or '*' in user_perms
     config = get_full_config()
     action = request.form.get('action')
 
     if action == 'update_appearance':
+        if not has_perm('manage_config'):
+            flash('You do not have permission to update appearance.', 'danger')
+            return redirect(url_for('admin'))
         config['dashboard_title'] = request.form.get('dashboard_title', 'Printer Dashboard')
         config['card_size'] = request.form.get('card_size', 'medium')
         config['font_family'] = request.form.get('font_family', 'sans-serif')
@@ -530,15 +636,26 @@ def manage_config():
         save_data(config, CONFIG_FILE)
         flash('Dashboard appearance and layout updated.', 'success')
     elif action == 'update_kiosk':
-        kiosk_config = get_kiosk_config()
+        if not (has_perm('manage_kiosk') or has_perm(f'manage_kiosk_{request.form.get("kiosk_id", "default")}')):
+            flash('You do not have permission to update kiosk.', 'danger')
+            return redirect(url_for('admin'))
+        kiosk_id = request.form.get('kiosk_id', 'default')
+        kiosk_config = get_kiosk_config(kiosk_id)
         kiosk_config['kiosk_printers_per_page'] = int(request.form.get('kiosk_printers_per_page', 6))
         kiosk_config['kiosk_printer_page_time'] = int(request.form.get('kiosk_printer_page_time', 10))
         kiosk_config['kiosk_image_page_time'] = int(request.form.get('kiosk_image_page_time', 5))
         kiosk_config['kiosk_image_frequency'] = int(request.form.get('kiosk_image_frequency', 2))
-        
+        kiosk_config['kiosk_images_per_slot'] = int(request.form.get('kiosk_images_per_slot', 1))
+
+        kiosk_config['show_printers'] = bool(request.form.get('show_printers'))
+
         kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
         kiosk_config['kiosk_sort_by'] = request.form.get('kiosk_sort_by', 'manual')
         kiosk_config['kiosk_title'] = request.form.get('kiosk_title', '')
+        kiosk_config['kiosk_header_height_px'] = int(request.form.get('kiosk_header_height_px', 150))
+        name = request.form.get('kiosk_name')
+        if name:
+            kiosk_config['name'] = name
 
         if 'kiosk_header_image_file' in request.files:
             file = request.files['kiosk_header_image_file']
@@ -546,14 +663,19 @@ def manage_config():
                 filename = secure_filename(f"header_{file.filename}")
                 file.save(os.path.join(app.config['KIOSK_UPLOAD_FOLDER'], filename))
                 kiosk_config['kiosk_header_image'] = url_for('static', filename=f"kiosk_images/{filename}")
-
-        save_data(kiosk_config, KIOSK_CONFIG_FILE)
+        save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
         flash('Kiosk settings updated.', 'success')
     elif action == 'update_colors':
+        if not has_perm('manage_config'):
+            flash('You do not have permission to update colors.', 'danger')
+            return redirect(url_for('admin'))
         config['status_colors'] = {key: value for key, value in request.form.items() if key != 'action'}
         save_data(config, CONFIG_FILE)
         flash('Status colors updated.', 'success')
     elif action == 'add_status':
+        if not has_perm('manage_config'):
+            flash('You do not have permission to add status.', 'danger')
+            return redirect(url_for('admin'))
         new_status = request.form.get('new_status_name')
         if new_status and new_status not in config.get('manual_statuses', []):
             config.setdefault('manual_statuses', []).append(new_status)
@@ -563,6 +685,9 @@ def manage_config():
         else:
             flash('Invalid name or status already exists.', 'danger')
     elif action == 'delete_status':
+        if not has_perm('manage_config'):
+            flash('You do not have permission to delete status.', 'danger')
+            return redirect(url_for('admin'))
         status_to_delete = request.form.get('status_name')
         if status_to_delete in config.get('manual_statuses', []):
             config['manual_statuses'].remove(status_to_delete)
@@ -572,6 +697,9 @@ def manage_config():
         else:
             flash('Status not found.', 'danger')
     elif action == 'update_aliases':
+        if not has_perm('manage_config'):
+            flash('You do not have permission to update aliases.', 'danger')
+            return redirect(url_for('admin'))
         aliases = {}
         for key, value in request.form.items():
             if key.startswith('alias_') and value:
@@ -585,7 +713,8 @@ def manage_config():
 @app.route('/admin/kiosk_images', methods=['POST'])
 @require_permission('manage_kiosk')
 def manage_kiosk_images():
-    kiosk_config = get_kiosk_config()
+    kiosk_id = request.form.get('kiosk_id', 'default')
+    kiosk_config = get_kiosk_config(kiosk_id)
     
     # Handle updates and removals
     new_kiosk_images = []
@@ -616,8 +745,37 @@ def manage_kiosk_images():
                 if image_url not in existing_urls:
                     kiosk_config['kiosk_images'].append({'url': image_url, 'time': default_time})
 
-    save_data(kiosk_config, KIOSK_CONFIG_FILE)
+    save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
     flash("Kiosk images updated.", 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/kiosks', methods=['POST'])
+@require_permission('manage_kiosk')
+def manage_kiosks():
+    action = request.form.get('action')
+    kiosk_id = request.form.get('kiosk_id', '').strip()
+    if not kiosk_id:
+        flash('Kiosk ID required.', 'danger')
+        return redirect(url_for('admin'))
+    if action == 'add_kiosk':
+        path = os.path.join(KIOSK_DIR, f"{kiosk_id}.json")
+        if os.path.exists(path):
+            flash('Kiosk already exists.', 'danger')
+        else:
+            config = DEFAULT_KIOSK_CONFIG.copy()
+            config['name'] = request.form.get('kiosk_name', kiosk_id)
+            config['show_printers'] = bool(request.form.get('show_printers'))
+            save_data(config, path)
+            flash('Kiosk added.', 'success')
+    elif action == 'delete_kiosk':
+        if kiosk_id == 'default':
+            flash('Cannot delete default kiosk.', 'danger')
+        else:
+            try:
+                os.remove(os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+                flash('Kiosk deleted.', 'success')
+            except FileNotFoundError:
+                flash('Kiosk not found.', 'danger')
     return redirect(url_for('admin'))
 
 
@@ -628,8 +786,9 @@ def dashboard():
     return render_template('dashboard.html', dashboard_title=dashboard_title)
 
 @app.route('/kiosk')
-def kiosk():
-    return render_template('kiosk.html')
+@app.route('/kiosk/<kiosk_id>')
+def kiosk(kiosk_id='default'):
+    return render_template('kiosk.html', kiosk_id=kiosk_id)
 
 if __name__ == '__main__':
     if not os.path.exists(ROLES_FILE):
@@ -648,9 +807,11 @@ if __name__ == '__main__':
     if not os.path.exists(CONFIG_FILE):
         print("First run: Creating default configuration.")
         get_full_config() # This will create and save the default config
+    if not os.path.exists(KIOSK_DIR):
+        os.makedirs(KIOSK_DIR, exist_ok=True)
     if not os.path.exists(KIOSK_CONFIG_FILE):
         print("First run: Creating default kiosk configuration.")
-        get_kiosk_config() # This will create and save the default kiosk config
+        get_kiosk_config()  # This will create and save the default kiosk config
     
     app.run(host='0.0.0.0', port=HTTP_PORT, debug=True)
 EOF
@@ -772,7 +933,14 @@ cat > templates/admin.html << 'EOF'
             {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('users')">User Management</button>{% endif %}
             {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('roles')">Role Management</button>{% endif %}
             {% if 'manage_config' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('config')">Configuration</button>{% endif %}
-            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('kiosk')">Kiosk Settings</button>{% endif %}
+            {% for kid, kc in kiosk_configs.items() %}
+                {% set perm = 'manage_kiosk_' + kid %}
+                {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
+                <button class="tab-button" onclick="showTab('kiosk-{{ kid }}')">{{ kc.name }}</button>{% endif %}
+            {% endfor %}
+            {% if can_add_kiosk %}
+                <button class="tab-button" onclick="showTab('add-kiosk')">Add Kiosk</button>
+            {% endif %}
             {% if 'view_logs' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('logs')">Logs</button>{% endif %}
         </div>
 
@@ -853,6 +1021,9 @@ cat > templates/admin.html << 'EOF'
                             <label>Or Upload Image (Optional)</label>
                             <input type="file" name="image_file" accept="image/*">
                             <small>Overrides Image URL if provided.</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" name="show_filename" checked> Display File Name</label>
                         </div>
                     </div>
                     <button type="submit" style="margin-top: 1rem;">Add Printer</button>
@@ -1128,45 +1299,60 @@ cat > templates/admin.html << 'EOF'
             {% endif %}
         </div>
 
-        <div id="kiosk" class="tab-content">
-            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
-            <h2>Kiosk Mode Settings</h2>
+        {% for kid, kconf in kiosk_configs.items() %}
+        <div id="kiosk-{{ kid }}" class="tab-content{% if loop.first %} active{% endif %}">
+            {% set perm = 'manage_kiosk_' + kid %}
+            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
+            <h2>Kiosk Mode Settings - {{ kconf.name }}</h2>
             <div class="form-section">
                 <form action="{{ url_for('manage_config') }}" method="POST" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="update_kiosk">
+                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
                     <div class="form-grid">
-                        <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kiosk_config.kiosk_printers_per_page }}" min="1"></div>
-                        <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kiosk_config.kiosk_printer_page_time }}" min="1"></div>
-                        <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kiosk_config.kiosk_image_page_time }}" min="1"></div>
+                        <div><label>Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}"></div>
+                        <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
+                        <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
+                        <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" min="1"></div>
+                        <div><label><input type="checkbox" name="show_printers" {% if kconf.show_printers %}checked{% endif %}> Show Printer Slides</label></div>
                         {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
-                        <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kiosk_config.kiosk_image_frequency }}" min="1"></div>
+                        <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>
                         {% endif %}
+                        <div><label>Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kconf.kiosk_images_per_slot }}" min="1"></div>
                         <div>
                             <label>Sort Kiosk By</label>
                             <select name="kiosk_sort_by">
-                                <option value="manual" {% if kiosk_config.kiosk_sort_by == 'manual' %}selected{% endif %}>Manual</option>
-                                <option value="status" {% if kiosk_config.kiosk_sort_by == 'status' %}selected{% endif %}>Status</option>
+                                <option value="manual" {% if kconf.kiosk_sort_by == 'manual' %}selected{% endif %}>Manual</option>
+                                <option value="status" {% if kconf.kiosk_sort_by == 'status' %}selected{% endif %}>Status</option>
                             </select>
                         </div>
-                        <div><label>Kiosk Background Color</label><input type="color" name="kiosk_background_color" value="{{ kiosk_config.kiosk_background_color }}"></div>
+                        <div><label>Kiosk Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}"></div>
+                        <div><label>Header Height (px)</label><input type="number" name="kiosk_header_height_px" value="{{ kconf.kiosk_header_height_px }}" min="10"></div>
                     </div>
                     <div style="margin-top: 1.5rem;">
                         <label>Kiosk Title</label>
-                        <input type="text" name="kiosk_title" value="{{ kiosk_config.kiosk_title }}">
+                        <input type="text" name="kiosk_title" value="{{ kconf.kiosk_title }}">
                     </div>
                     <div style="margin-top: 1rem;">
                         <label>Kiosk Header Image</label>
                         <input type="file" name="kiosk_header_image_file" accept="image/*">
-                        <small>Current: {{ kiosk_config.kiosk_header_image or 'None' }}</small>
+                        <small>Current: {{ kconf.kiosk_header_image or 'None' }}</small>
                     </div>
                     <button type="submit" style="margin-top: 1rem;">Save Kiosk Settings</button>
                 </form>
+                {% if kid != 'default' %}
+                <form action="{{ url_for('manage_kiosks') }}" method="POST" onsubmit="return confirm('Delete this kiosk?');" style="margin-top:0.5rem;">
+                    <input type="hidden" name="action" value="delete_kiosk">
+                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                    <button type="submit" class="delete">Delete Kiosk</button>
+                </form>
+                {% endif %}
             </div>
             <div class="form-section">
                 <h3>Manage Kiosk Images</h3>
                 <form action="{{ url_for('manage_kiosk_images') }}" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
                     <div id="kiosk-image-list">
-                        {% for image in kiosk_config.kiosk_images %}
+                        {% for image in kconf.kiosk_images %}
                         <div class="kiosk-image-item">
                             <input type="hidden" name="url_{{ loop.index0 }}" value="{{ image.url }}">
                             <input type="text" value="{{ image.url.split('/')[-1] }}" readonly>
@@ -1186,7 +1372,21 @@ cat > templates/admin.html << 'EOF'
             </div>
             {% endif %}
         </div>
-        
+        {% endfor %}
+        {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+        <div class="tab-content" id="add-kiosk">
+            <h2>Create New Kiosk</h2>
+            <form action="{{ url_for('manage_kiosks') }}" method="POST">
+                <input type="hidden" name="action" value="add_kiosk">
+                <div class="form-grid">
+                    <div><label>Kiosk ID</label><input type="text" name="kiosk_id" required></div>
+                    <div><label>Display Name</label><input type="text" name="kiosk_name" required></div>
+                    <div><label><input type="checkbox" name="show_printers" checked> Show Printer Slides</label></div>
+                </div>
+                <button type="submit" style="margin-top:1rem;">Add Kiosk</button>
+            </form>
+        </div>
+        {% endif %}
         <div id="logs" class="tab-content">
             <h2>Activity Log</h2>
             <pre id="log-viewer">{{ log_content }}</pre>
@@ -1306,6 +1506,9 @@ cat > templates/edit_printer.html << 'EOF'
                     <label>Or Upload New Image (Optional)</label>
                     <input type="file" name="image_file" accept="image/*">
                     <small>Current file: <strong>{{ printer.get('local_image_filename', 'None') }}</strong>. Overrides URL.</small>
+                </div>
+                <div>
+                    <label><input type="checkbox" name="show_filename" {% if printer.show_filename != False %}checked{% endif %}> Display File Name</label>
                 </div>
             </div>
             <div style="margin-top: 2rem;">
@@ -1513,7 +1716,7 @@ cat > templates/kiosk.html << 'EOF'
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; cursor: none; }
         .kiosk-header { position: fixed; top: 0; left: 0; width: 100%; padding: 10px 20px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; z-index: 10; color: white; }
-        .kiosk-header img { max-height: 50px; margin-right: 20px; }
+        .kiosk-header img { max-height: var(--header-img-height, 150px); margin-right: 20px; }
         .kiosk-header h1 { margin: 0; font-size: 2.5em; text-shadow: 2px 2px 4px rgba(0,0,0,0.7); }
         #kiosk-container { width: 100%; height: 100%; position: relative; }
         .slide { width: 100%; height: 100%; position: absolute; top: 0; left: 0; opacity: 0; transition: opacity 1s ease-in-out; }
@@ -1542,9 +1745,11 @@ cat > templates/kiosk.html << 'EOF'
     <script>
         const kioskContainer = document.getElementById('kiosk-container');
         const kioskHeader = document.querySelector('.kiosk-header');
+        const kioskId = "{{ kiosk_id }}";
         let slides = [];
         let currentSlideIndex = 0;
         let slideTimeout;
+        let imageIndex = 0;
         let globalConfig = {};
         let globalKioskConfig = {};
 
@@ -1579,7 +1784,8 @@ cat > templates/kiosk.html << 'EOF'
 
             const imgSrc = printerData.image_src || `https://via.placeholder.com/400x200/dee2e6/6c757d?text=${printerName}`;
             const statusColor = config.status_colors[stateKey] || '#6c757d';
-            const filenameHtml = printerData.filename ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
+            const showFile = printerData.show_filename !== false;
+            const filenameHtml = showFile && printerData.filename ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
 
             let timeHtml = '';
             if (state === 'Printing') {
@@ -1631,6 +1837,7 @@ cat > templates/kiosk.html << 'EOF'
             globalConfig = data.config || {};
             globalKioskConfig = data.kiosk_config || {};
             document.body.style.backgroundColor = globalKioskConfig.kiosk_background_color || '#000';
+            document.documentElement.style.setProperty('--header-img-height', (globalKioskConfig.kiosk_header_height_px || 150) + 'px');
             
             kioskHeader.innerHTML = '';
             if (globalKioskConfig.kiosk_header_image) {
@@ -1656,16 +1863,18 @@ cat > templates/kiosk.html << 'EOF'
             }
 
             let printerSlides = [];
-            const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
-            for (let i = 0; i < printerArray.length; i += printersPerPage) {
-                printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+            if (globalKioskConfig.show_printers !== false) {
+                const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
+                for (let i = 0; i < printerArray.length; i += printersPerPage) {
+                    printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+                }
             }
 
             slides = [];
             const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
+            const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
             const images = globalKioskConfig.kiosk_images || [];
-            let imageIndex = 0;
-            if (printerSlides.length === 0 && images.length > 0) {
+            if ((printerSlides.length === 0 || globalKioskConfig.show_printers === false) && images.length > 0) {
                  images.forEach(image => {
                     slides.push({ isImage: true, url: image.url, time: image.time });
                  });
@@ -1673,16 +1882,18 @@ cat > templates/kiosk.html << 'EOF'
                 for (let i = 0; i < printerSlides.length; i++) {
                     slides.push(printerSlides[i]);
                     if (images.length > 0 && (i + 1) % imageFrequency === 0) {
-                        const image = images[imageIndex % images.length];
-                        slides.push({ isImage: true, url: image.url, time: image.time });
-                        imageIndex++;
+                        for (let j = 0; j < imagesPerSlot; j++) {
+                            const image = images[imageIndex % images.length];
+                            slides.push({ isImage: true, url: image.url, time: image.time });
+                            imageIndex++;
+                        }
                     }
                 }
             }
             
             kioskContainer.innerHTML = '';
             if (slides.length === 0) {
-                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No printers to display.</h1>';
+                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No content to display.</h1>';
                 return;
             }
 
@@ -1709,6 +1920,12 @@ cat > templates/kiosk.html << 'EOF'
                 }
                 kioskContainer.appendChild(slideDiv);
             });
+
+            // Continue slideshow from the previous slide when rebuilding
+            if (currentSlideIndex >= slides.length) {
+                currentSlideIndex = 0;
+            }
+            cycleSlide();
         }
         
         function cycleSlide() {
@@ -1747,14 +1964,13 @@ cat > templates/kiosk.html << 'EOF'
         }
 
         function initialLoad() {
-            $.getJSON('/status')
+            $.getJSON('/status', {kiosk: kioskId})
                 .done(data => {
                     const refreshInterval = (data.config.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    cycleSlide();
-                    
+
                     setInterval(() => {
-                        $.getJSON('/status').done(buildAndRenderSlides);
+                        $.getJSON('/status', {kiosk: kioskId}).done(buildAndRenderSlides);
                     }, refreshInterval);
                 })
                 .fail(() => {
@@ -1779,11 +1995,9 @@ echo ""
 echo "--- ✅ Setup Complete ---"
 echo ""
 echo "Next steps:"
-echo "1. Install Python dependencies:"
-echo "   sudo apt update && sudo apt install -y python3-flask python3-requests python3-werkzeug"
-echo "2. Run the application:      python3 aggregator_with_ui.py"
-echo "3. Open your browser to http://<your_ip>:8080/admin and log in."
+echo "1. Run the application:      python3 aggregator_with_ui.py"
+echo "2. Open your browser to http://<your_ip>/admin and log in."
 echo "   > Default SYSTEM login is:  system / changeme"
 echo "   > Default ADMIN login is:   admin / changeme"
 echo "   > CHANGE THESE PASSWORDS IMMEDIATELY using the system account."
-echo""
+echo ""
