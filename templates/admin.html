@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Panel</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #f8f9fa; color: #343a40; margin: 0; padding: 2rem; }
+        .container { max-width: 1200px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #dee2e6; padding-bottom: 1rem; margin-bottom: 1rem;}
+        h1, h2, h3 { color: #0056b3; margin-top: 0; }
+        h2 { margin-top: 2rem; border-bottom: 1px solid #e9ecef; padding-bottom: 0.5rem; }
+        h3 { color: #495057; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #dee2e6; vertical-align: middle; }
+        th { background-color: #e9ecef; }
+        .form-section { background: #f1f3f5; padding: 1.5rem; border-radius: 8px; margin-top: 1rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+        label { font-weight: bold; margin-bottom: 5px; display: block; }
+        input, select, textarea { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ced4da; box-sizing: border-box; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-size: 1rem; }
+        button:hover { background: #0056b3; }
+        button.delete { background: #dc3545; }
+        button.delete:hover { background: #c82333; }
+        a.button, button.edit { display: inline-block; background: #6c757d; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; font-size: 0.9rem; border: none; }
+        a.button:hover, button.edit:hover { background: #5a6268; }
+        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; border: 1px solid transparent; }
+        .flash-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+        .flash-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+        .nav-tabs { border-bottom: 1px solid #dee2e6; margin-bottom: 1rem; }
+        .nav-tabs button { background: none; border: none; padding: 10px 15px; cursor: pointer; font-size: 1rem; color: #6c757d; }
+        .nav-tabs button.active { border-bottom: 3px solid #007bff; font-weight: bold; color: #0056b3; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .permissions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        #log-viewer { width: 100%; height: 600px; border: 1px solid #dee2e6; border-radius: 4px; white-space: pre-wrap; background: #212529; color: #f8f9fa; padding: 1rem; box-sizing: border-box; }
+        #sortable-printers li, #sortable-statuses li { padding: 10px; background-color: #e9ecef; margin-bottom: 5px; border-radius: 4px; cursor: grab; }
+        #sortable-printers li:active, #sortable-statuses li:active { cursor: grabbing; }
+        small { color: #6c757d; font-size: 0.85em; }
+        .kiosk-image-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .kiosk-image-item input[type="text"] { flex-grow: 1; }
+        .kiosk-image-item input[type="number"] { width: 80px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Admin Panel</h1>
+            <div>Logged in as <strong>{{ session.username }}</strong> ({{ session.role }}) &nbsp; <a href="/logout" class="button">Logout</a></div>
+        </div>
+        <p>View public dashboard: <a href="/dashboard" target="_blank">/dashboard</a> | <a href="/kiosk" target="_blank">Kiosk View</a></p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}
+            {% for category, message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}
+        {% endif %}{% endwith %}
+
+        <div class="nav-tabs">
+            <button class="tab-button active" onclick="showTab('printers')">Printers</button>
+            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('users')">User Management</button>{% endif %}
+            {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('roles')">Role Management</button>{% endif %}
+            {% if 'manage_config' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('config')">Configuration</button>{% endif %}
+            {% for kid, kc in kiosk_configs.items() %}
+                {% set perm = 'manage_kiosk_' + kid %}
+                {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
+                <button class="tab-button" onclick="showTab('kiosk-{{ kid }}')">{{ kc.name }}</button>{% endif %}
+            {% endfor %}
+            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                <button class="tab-button" onclick="showTab('add-kiosk')">Add Kiosk</button>
+            {% endif %}
+            {% if 'view_logs' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}<button class="tab-button" onclick="showTab('logs')">Logs</button>{% endif %}
+        </div>
+
+        <div id="printers" class="tab-content active">
+            <h2>Manage Printers</h2>
+            <table>
+                <thead><tr><th>Name</th><th>Type</th><th>Connection Info</th><th>Manual Override</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for printer in printers %}
+                    <tr>
+                        <td>{{ printer.name }}</td><td>{{ printer.type }}</td>
+                        <td>
+                            {% if printer.type == 'prusa' %}{{ printer.ip }} / {{ printer.api_key[:4] }}...{% endif %}
+                            {% if printer.type == 'klipper' %}{{ printer.url }}{% endif %}
+                            {% if printer.type == 'bambulab' %}{{ printer.ip }} / {{ printer.serial[:6] }}...{% endif %}
+                        </td>
+                        <td>
+                            <form action="{{ url_for('manage_overrides') }}" method="POST" style="display:inline-flex;">
+                                <input type="hidden" name="name" value="{{ printer.name }}">
+                                <select name="status_override">
+                                    <option value="">-- Clear --</option>
+                                    {% for status in manual_statuses %}<option value="{{ status }}" {% if overrides.get(printer.name, {}).get('status') == status %}selected{% endif %}>{{ status }}</option>{% endfor %}
+                                </select><button type="submit">Set</button>
+                            </form>
+                        </td>
+                        <td>
+                            {% if 'edit_printer' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                            <a href="{{ url_for('edit_printer', original_name=printer.name) }}" class="button edit">Edit</a>
+                            {% endif %}
+                            {% if 'delete_printer' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                            <form action="{{ url_for('manage_printers') }}" method="POST" onsubmit="return confirm('Delete this printer?');" style="display:inline-flex;">
+                                <input type="hidden" name="action" value="delete_printer"><input type="hidden" name="name" value="{{ printer.name }}"><button class="delete" type="submit">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}<tr><td colspan="5" style="text-align: center;">No printers configured.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+            
+            {% if 'add_printer' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <div class="form-section">
+                <h3>Add New Printer</h3>
+                <form action="{{ url_for('manage_printers') }}" method="POST" id="add-printer-form" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="add_printer">
+                    <div class="form-grid">
+                        <div><label>Printer Name</label><input type="text" name="name" required></div>
+                        <div><label>Type</label>
+                            <select name="type" id="add-printer-type">
+                                <option value="prusa">Prusa</option>
+                                <option value="klipper">Klipper</option>
+                                <option value="bambulab">Bambu Lab</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="type-specific-fields" id="prusa-fields">
+                        <div class="form-grid">
+                            <div><label>IP Address (Local Network)</label><input type="text" name="ip"></div>
+                            <div><label>API Key (From Printer Menu)</label><input type="text" name="api_key"></div>
+                        </div>
+                    </div>
+                    <div class="type-specific-fields" id="klipper-fields">
+                        <div class="form-grid">
+                            <div><label>Moonraker/Klipper URL</label><input type="text" name="url" placeholder="http://klipper.local"></div>
+                        </div>
+                    </div>
+                    <div class="type-specific-fields" id="bambulab-fields">
+                        <div class="form-grid">
+                            <div><label>IP Address</label><input type="text" name="ip"></div>
+                            <div><label>Access Code</label><input type="text" name="access_code"></div>
+                            <div><label>Serial Number</label><input type="text" name="serial"></div>
+                        </div>
+                    </div>
+                    <div class="form-grid" style="margin-top: 1rem;">
+                        <div><label>Number of Toolheads</label><input type="number" name="toolheads" min="1" value="1"></div>
+                        <div><label>Image URL (Optional)</label><input type="text" name="image_url" placeholder="https://.../image.png"></div>
+                        <div>
+                            <label>Or Upload Image (Optional)</label>
+                            <input type="file" name="image_file" accept="image/*">
+                            <small>Overrides Image URL if provided.</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" name="show_filename" checked> Display File Name</label>
+                        </div>
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Add Printer</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+
+        <div id="users" class="tab-content">
+            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <h2>User Management</h2>
+            <table>
+                <thead><tr><th>Username</th><th>Role</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for username, data in users.items() %}
+                    <tr><td>{{ username }}</td><td>{{ data.role }}</td>
+                        <td>
+                            {% if roles[data.role].level < roles[session.role].level %}
+                            {% if 'change_user_role' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                            <form action="{{ url_for('manage_users') }}" method="POST" style="display:inline-flex;">
+                                <input type="hidden" name="action" value="change_role"><input type="hidden" name="username" value="{{ username }}">
+                                <select name="role" onchange="this.form.submit()">
+                                    {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level %}
+                                    <option value="{{ role_name }}" {% if data.role == role_name %}selected{% endif %}>{{ role_name }}</option>
+                                    {% endif %}{% endfor %}
+                                </select>
+                            </form>
+                            {% endif %}
+                            {% if 'delete_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                            <form action="{{ url_for('manage_users') }}" method="POST" onsubmit="return confirm('Delete this user?');" style="display:inline-flex;">
+                                <input type="hidden" name="action" value="delete_user"><input type="hidden" name="username" value="{{ username }}">
+                                <button class="delete" type="submit">Delete</button>
+                            </form>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            {% if 'add_user' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <div class="form-section">
+                <h3>Add New User</h3>
+                <form action="{{ url_for('manage_users') }}" method="POST"><input type="hidden" name="action" value="add_user">
+                    <div class="form-grid">
+                        <div><label>Username</label><input type="text" name="username" required></div>
+                        <div><label>Password</label><input type="password" name="password" required></div>
+                        <div><label>Role</label>
+                            <select name="role">
+                                {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level %}
+                                <option value="{{ role_name }}">{{ role_name }}</option>
+                                {% endif %}{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Add User</button>
+                </form>
+            </div>
+            {% endif %}
+            {% if 'change_user_password' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <div class="form-section">
+                <h3>Change User Password</h3>
+                <form action="{{ url_for('manage_users') }}" method="POST"><input type="hidden" name="action" value="change_password">
+                    <div class="form-grid">
+                        <div><label>Username</label>
+                            <select name="username">
+                                {% for u, d in users.items() %}{% if roles[d.role].level < roles[session.role].level or u == session.username %}
+                                <option value="{{ u }}">{{ u }}</option>
+                                {% endif %}{% endfor %}
+                            </select>
+                        </div>
+                        <div><label>New Password</label><input type="password" name="new_password" required></div>
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Change Password</button>
+                </form>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        <div id="roles" class="tab-content">
+            {% if 'manage_roles' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <h2>Role Management</h2>
+            <table>
+                <thead><tr><th>Role Name</th><th>Permissions</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for role_name, role_data in roles.items() %}
+                    <tr>
+                        <td>{{ role_name }} (Level: {{role_data.level}})</td><td>{{ role_data.permissions|join(', ') }}</td>
+                        <td>
+                            {% if role_name != 'system' %}
+                            <a href="{{ url_for('edit_role', role_name=role_name) }}" class="button edit">Edit</a>
+                            {% if role_name not in ['super_user', 'admin', 'intern'] %}
+                            <form action="{{ url_for('manage_roles') }}" method="POST" onsubmit="return confirm('Delete this role? This cannot be undone.');" style="display:inline-flex;">
+                                <input type="hidden" name="action" value="delete_role"><input type="hidden" name="role_name" value="{{ role_name }}">
+                                <button class="delete" type="submit">Delete</button>
+                            </form>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="form-section">
+                <h3>Create New Role</h3>
+                <form action="{{ url_for('manage_roles') }}" method="POST"><input type="hidden" name="action" value="add_role">
+                    <div class="form-grid">
+                        <div><label>Role Name</label><input type="text" name="role_name" required></div>
+                        <div><label>Permission Level (1-89)</label><input type="number" name="level" min="1" max="89" value="10" required></div>
+                    </div>
+                    <h4>Permissions:</h4>
+                    <div class="permissions-grid">
+                        {% for perm in available_permissions %}
+                        <div><input type="checkbox" name="permissions" value="{{ perm }}" id="perm_{{ perm }}"> <label for="perm_{{ perm }}">{{ perm }}</label></div>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Create Role</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+
+        <div id="config" class="tab-content">
+            {% if 'manage_config' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+            <h2>Application Configuration</h2>
+            <div class="form-section">
+                <h3>Dashboard Layout & Appearance</h3>
+                <form action="{{ url_for('manage_config') }}" method="POST" id="layout-form">
+                    <input type="hidden" name="action" value="update_appearance">
+                    <input type="hidden" name="printer_order" id="printer_order_input">
+                    <input type="hidden" name="status_order" id="status_order_input">
+                    <div class="form-grid">
+                        <div><label>Dashboard Title</label><input type="text" name="dashboard_title" value="{{ config.dashboard_title }}"></div>
+                        <div><label>Sort Printers By</label>
+                            <select name="sort_by">
+                                <option value="manual" {% if config.sort_by == 'manual' %}selected{% endif %}>Manual</option>
+                                <option value="status" {% if config.sort_by == 'status' %}selected{% endif %}>Status</option>
+                            </select>
+                        </div>
+                        <div><label>Card Size</label>
+                            <select name="card_size">
+                                <option value="small" {% if config.card_size == 'small' %}selected{% endif %}>Small</option>
+                                <option value="medium" {% if config.card_size == 'medium' %}selected{% endif %}>Medium</option>
+                                <option value="large" {% if config.card_size == 'large' %}selected{% endif %}>Large</option>
+                            </select>
+                        </div>
+                        <div><label>Font Family</label>
+                            <select name="font_family">
+                                <option value="sans-serif" {% if config.font_family == 'sans-serif' %}selected{% endif %}>Sans-Serif</option>
+                                <option value="serif" {% if config.font_family == 'serif' %}selected{% endif %}>Serif</option>
+                                <option value="monospace" {% if config.font_family == 'monospace' %}selected{% endif %}>Monospace</option>
+                            </select>
+                        </div>
+                        <div><label>Refresh Interval (seconds)</label><input type="number" name="refresh_interval_sec" value="{{ config.refresh_interval_sec | default(30) }}" min="5"></div>
+                    </div>
+                    <div class="form-grid" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-top: 1.5rem;">
+                        <div><label>Printer Name Font Size (px)</label><input type="number" name="font_size_printer_name_px" value="{{ config.font_size_printer_name_px | default(20) }}"></div>
+                        <div><label>Filename Font Size (px)</label><input type="number" name="font_size_filename_px" value="{{ config.font_size_filename_px | default(14) }}"></div>
+                        <div><label>Status Font Size (px)</label><input type="number" name="font_size_status_px" value="{{ config.font_size_status_px | default(12) }}"></div>
+                        <div><label>Details Font Size (px)</label><input type="number" name="font_size_details_px" value="{{ config.font_size_details_px | default(14) }}"></div>
+                    </div>
+                    <div class="form-grid" style="margin-top: 1.5rem;">
+                        <div>
+                            <label>Manual Printer Order (Drag)</label>
+                            <ul id="sortable-printers">
+                                {% for printer_name in config.printer_order %}
+                                    <li data-name="{{ printer_name }}">{{ printer_name }}</li>
+                                {% endfor %}
+                                {% for printer in printers %}{% if printer.name not in config.printer_order %}
+                                    <li data-name="{{ printer.name }}">{{ printer.name }}</li>
+                                {% endif %}{% endfor %}
+                            </ul>
+                        </div>
+                        <div>
+                            <label>Status Sort Order (Drag)</label>
+                            <ul id="sortable-statuses">
+                                {% set aliased_keys = config.status_aliases.keys() %}
+                                {% for status_name in config.status_order %}
+                                    {% if status_name not in aliased_keys %}
+                                    <li data-name="{{ status_name }}">{{ status_name }}</li>
+                                    {% endif %}
+                                {% endfor %}
+                                {% for status_name in all_statuses %}
+                                    {% if status_name not in config.status_order and status_name not in aliased_keys %}
+                                    <li data-name="{{ status_name }}">{{ status_name }}</li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="form-grid" style="margin-top: 1.5rem;">
+                        <div><label>Progress Bar Color</label><input type="color" name="progress_bar_color" value="{{ config.progress_bar_color }}"></div>
+                        <div><label>Progress Bar Text Color</label><input type="color" name="progress_bar_text_color" value="{{ config.progress_bar_text_color }}"></div>
+                        <div><label>Progress Bar Font Size (px)</label><input type="number" name="progress_bar_font_size_px" value="{{ config.progress_bar_font_size_px }}" min="6"></div>
+                        <div><label>Progress Bar Height (px)</label><input type="number" name="progress_bar_height_px" value="{{ config.progress_bar_height_px }}" min="4"></div>
+                        <div><label>Progress Bar Text Outline</label>
+                            <input type="checkbox" name="progress_bar_text_shadow" value="true" {% if config.progress_bar_text_shadow %}checked{% endif %}>
+                        </div>
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Save Layout & Appearance</button>
+                </form>
+            </div>
+            <div class="form-section">
+                <h3>Manage Manual Statuses</h3>
+                <table>
+                    <thead><tr><th>Status Name</th><th>Action</th></tr></thead>
+                    <tbody>
+                        {% for status in manual_statuses %}
+                        <tr><td>{{ status }}</td>
+                            <td>
+                                <form action="{{ url_for('manage_config') }}" method="POST" onsubmit="return confirm('Delete this status?');" style="display:inline-flex;">
+                                    <input type="hidden" name="action" value="delete_status"><input type="hidden" name="status_name" value="{{ status }}">
+                                    <button class="delete" type="submit">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <form action="{{ url_for('manage_config') }}" method="POST" style="margin-top: 1rem;">
+                    <input type="hidden" name="action" value="add_status">
+                    <div class="form-grid">
+                        <div><label>New Status Name</label><input type="text" name="new_status_name" required></div>
+                        <div style="align-self: end;"><button type="submit">Add Status</button></div>
+                    </div>
+                </form>
+            </div>
+            <div class="form-section">
+                <h3>Manage Status Colors <small>(Appearance may vary by browser)</small></h3>
+                <form action="{{ url_for('manage_config') }}" method="POST">
+                    <input type="hidden" name="action" value="update_colors">
+                    <div class="form-grid">
+                        {% for status_name in all_statuses %}
+                        {% set status_key = status_name.lower().replace(' ', '_') %}
+                        <div>
+                            <label for="color_{{ status_key }}">{{ status_name }}</label>
+                            <input type="color" id="color_{{ status_key }}" name="{{ status_key }}" value="{{ config.status_colors.get(status_key, '#6c757d') }}">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Save Colors</button>
+                </form>
+            </div>
+            <div class="form-section">
+                <h3>Status Aliasing</h3>
+                <form action="{{ url_for('manage_config') }}" method="POST">
+                    <input type="hidden" name="action" value="update_aliases">
+                    <table>
+                        <thead><tr><th>Original Status</th><th>Display As</th></tr></thead>
+                        <tbody>
+                            {% for status_name in all_statuses %}
+                            <tr>
+                                <td>{{ status_name }}</td>
+                                <td>
+                                    <select name="alias_{{ status_name }}">
+                                        <option value="">-- No Alias --</option>
+                                        {% for target_status in all_statuses %}
+                                            {% if status_name != target_status %}
+                                            <option value="{{ target_status }}" {% if config.get('status_aliases', {}).get(status_name) == target_status %}selected{% endif %}>{{ target_status }}</option>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <button type="submit" style="margin-top: 1rem;">Save Aliases</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+
+        {% for kid, kconf in kiosk_configs.items() %}
+        <div id="kiosk-{{ kid }}" class="tab-content{% if loop.first %} active{% endif %}">
+            {% set perm = 'manage_kiosk_' + kid %}
+            {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] or perm in roles[session.role]['permissions'] %}
+            <h2>Kiosk Mode Settings - {{ kconf.name }}</h2>
+            <div class="form-section">
+                <form action="{{ url_for('manage_config') }}" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="update_kiosk">
+                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                    <div class="form-grid">
+                        <div><label>Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}"></div>
+                        <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
+                        <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
+                        <div><label>Default Image Page Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" min="1"></div>
+                        <div><label><input type="checkbox" name="show_printers" {% if kconf.show_printers %}checked{% endif %}> Show Printer Slides</label></div>
+                        {% if 'manage_kiosk_frequency' in roles[session.role]['permissions'] or 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+                        <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>
+                        {% endif %}
+                        <div><label>Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kconf.kiosk_images_per_slot }}" min="1"></div>
+                        <div>
+                            <label>Sort Kiosk By</label>
+                            <select name="kiosk_sort_by">
+                                <option value="manual" {% if kconf.kiosk_sort_by == 'manual' %}selected{% endif %}>Manual</option>
+                                <option value="status" {% if kconf.kiosk_sort_by == 'status' %}selected{% endif %}>Status</option>
+                            </select>
+                        </div>
+                        <div><label>Kiosk Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}"></div>
+                        <div><label>Header Height (px)</label><input type="number" name="kiosk_header_height_px" value="{{ kconf.kiosk_header_height_px }}" min="10"></div>
+                    </div>
+                    <div style="margin-top: 1.5rem;">
+                        <label>Kiosk Title</label>
+                        <input type="text" name="kiosk_title" value="{{ kconf.kiosk_title }}">
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <label>Kiosk Header Image</label>
+                        <input type="file" name="kiosk_header_image_file" accept="image/*">
+                        <small>Current: {{ kconf.kiosk_header_image or 'None' }}</small>
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Save Kiosk Settings</button>
+                </form>
+                {% if kid != 'default' %}
+                <form action="{{ url_for('manage_kiosks') }}" method="POST" onsubmit="return confirm('Delete this kiosk?');" style="margin-top:0.5rem;">
+                    <input type="hidden" name="action" value="delete_kiosk">
+                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                    <button type="submit" class="delete">Delete Kiosk</button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="form-section">
+                <h3>Manage Kiosk Images</h3>
+                <form action="{{ url_for('manage_kiosk_images') }}" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="kiosk_id" value="{{ kid }}">
+                    <div id="kiosk-image-list">
+                        {% for image in kconf.kiosk_images %}
+                        <div class="kiosk-image-item">
+                            <input type="hidden" name="url_{{ loop.index0 }}" value="{{ image.url }}">
+                            <input type="text" value="{{ image.url.split('/')[-1] }}" readonly>
+                            <input type="number" name="time_{{ loop.index0 }}" value="{{ image.time }}" min="1">
+                            <label>sec</label>
+                            <button type="submit" name="remove_{{ loop.index0 }}" class="delete">Remove</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <label>Upload New Images</label>
+                        <input type="file" name="kiosk_image_files" accept="image/*" multiple>
+                        <small>You can select multiple images. They will be added to the slideshow with the default time.</small>
+                    </div>
+                    <button type="submit" style="margin-top: 1rem;">Save Changes & Upload</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% if 'manage_kiosk' in roles[session.role]['permissions'] or '*' in roles[session.role]['permissions'] %}
+        <div class="tab-content" id="add-kiosk">
+            <h2>Create New Kiosk</h2>
+            <form action="{{ url_for('manage_kiosks') }}" method="POST">
+                <input type="hidden" name="action" value="add_kiosk">
+                <div class="form-grid">
+                    <div><label>Kiosk ID</label><input type="text" name="kiosk_id" required></div>
+                    <div><label>Display Name</label><input type="text" name="kiosk_name" required></div>
+                    <div><label><input type="checkbox" name="show_printers" checked> Show Printer Slides</label></div>
+                </div>
+                <button type="submit" style="margin-top:1rem;">Add Kiosk</button>
+            </form>
+        </div>
+        {% endif %}
+        <div id="logs" class="tab-content">
+            <h2>Activity Log</h2>
+            <pre id="log-viewer">{{ log_content }}</pre>
+        </div>
+    </div>
+    <script>
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        const sortablePrinters = document.getElementById('sortable-printers');
+        if (sortablePrinters) {
+            new Sortable(sortablePrinters, { animation: 150 });
+        }
+        
+        const sortableStatuses = document.getElementById('sortable-statuses');
+        if (sortableStatuses) {
+            new Sortable(sortableStatuses, { animation: 150 });
+        }
+        
+        const layoutForm = document.getElementById('layout-form');
+        if(layoutForm) {
+            layoutForm.addEventListener('submit', function() {
+                if(sortablePrinters) {
+                    const printerOrder = Array.from(sortablePrinters.children).map(item => item.dataset.name);
+                    document.getElementById('printer_order_input').value = printerOrder.join(',');
+                }
+                if(sortableStatuses) {
+                    const statusOrder = Array.from(sortableStatuses.children).map(item => item.dataset.name);
+                    document.getElementById('status_order_input').value = statusOrder.join(',');
+                }
+            });
+        }
+
+        function handleAddFormDisplay() {
+            const type = document.getElementById('add-printer-type').value;
+            document.querySelectorAll('.type-specific-fields').forEach(div => {
+                div.style.display = 'none';
+                div.querySelectorAll('input').forEach(input => input.disabled = true);
+            });
+            const fieldsToShow = document.getElementById(type + '-fields');
+            if (fieldsToShow) {
+                fieldsToShow.style.display = 'block';
+                fieldsToShow.querySelectorAll('input').forEach(input => input.disabled = false);
+            }
+        }
+        document.getElementById('add-printer-type').addEventListener('change', handleAddFormDisplay);
+        document.addEventListener('DOMContentLoaded', handleAddFormDisplay);
+    </script>
+</body>
+</html>
