@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Ensure all paths are relative to the location of this script
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 #
 # setup_printers.sh (v63 - Optional Printerless Kiosks)
 #
@@ -2004,4 +2008,4 @@ echo "3. Open your browser to http://<your_ip>:8080/admin and log in."
 echo "   > Default SYSTEM login is:  system / changeme"
 echo "   > Default ADMIN login is:   admin / changeme"
 echo "   > CHANGE THESE PASSWORDS IMMEDIATELY using the system account."
-echo""
+echo ""
