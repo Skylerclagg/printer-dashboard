@@ -1,0 +1,15 @@
+{
+  "kiosk_background_color": "#000000",
+  "kiosk_header_height_px": 150,
+  "kiosk_header_image": "",
+  "kiosk_image_frequency": 2,
+  "kiosk_image_page_time": 5,
+  "kiosk_images": [],
+  "kiosk_images_per_slot": 1,
+  "kiosk_printer_page_time": 10,
+  "kiosk_printers_per_page": 6,
+  "kiosk_sort_by": "manual",
+  "kiosk_title": "",
+  "name": "Main Kiosk",
+  "show_printers": true
+}

@@ -132,10 +132,9 @@
             
             kioskHeader.innerHTML = '';
             if (globalKioskConfig.kiosk_header_image) {
-                kioskHeader.innerHTML += `<img src="${globalKioskConfig.kiosk_header_image}" alt="Header Image">`;
-            }
-            if (globalKioskConfig.kiosk_title) {
-                kioskHeader.innerHTML += `<h1>${globalKioskConfig.kiosk_title}</h1>`;
+                kioskHeader.innerHTML = `<img src="${globalKioskConfig.kiosk_header_image}" alt="Header Image">`;
+            } else if (globalKioskConfig.kiosk_title) {
+                kioskHeader.innerHTML = `<h1>${globalKioskConfig.kiosk_title}</h1>`;
             }
 
             const printerData = { ...data };
@@ -143,41 +142,38 @@
             delete printerData.kiosk_config;
 
             let printerArray = Object.entries(printerData);
-            if (globalKioskConfig.kiosk_sort_by === 'status') {
-                const statusOrder = globalConfig.status_order || [];
-                const statusMap = new Map(statusOrder.map((status, index) => [status, index]));
-                printerArray.sort(([, a], [, b]) => (statusMap.get(a.state) ?? 999) - (statusMap.get(b.state) ?? 999));
-            } else if (globalKioskConfig.kiosk_sort_by === 'manual' || !globalKioskConfig.kiosk_sort_by) {
-                const printerOrder = globalConfig.printer_order || [];
-                const printerMap = new Map(printerOrder.map((name, index) => [name, index]));
-                printerArray.sort(([aName], [bName]) => (printerMap.get(aName) ?? 999) - (printerMap.get(bName) ?? 999));
-            }
-
+            
+            slides = [];
+            const images = globalKioskConfig.kiosk_images || [];
+            
             let printerSlides = [];
-            if (globalKioskConfig.show_printers !== false) {
+            if (globalKioskConfig.show_printers && printerArray.length > 0) {
+                if (globalKioskConfig.kiosk_sort_by === 'status') {
+                    const statusOrder = globalConfig.status_order || [];
+                    const statusMap = new Map(statusOrder.map((status, index) => [status, index]));
+                    printerArray.sort(([, a], [, b]) => (statusMap.get(a.state) ?? 999) - (statusMap.get(b.state) ?? 999));
+                } else {
+                    const printerOrder = globalConfig.printer_order || [];
+                    const printerMap = new Map(printerOrder.map((name, index) => [name, index]));
+                    printerArray.sort(([aName], [bName]) => (printerMap.get(aName) ?? 999) - (printerMap.get(bName) ?? 999));
+                }
+
                 const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
                 for (let i = 0; i < printerArray.length; i += printersPerPage) {
                     printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
                 }
             }
 
-            slides = [];
             const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
             const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
-            const images = globalKioskConfig.kiosk_images || [];
-            if ((printerSlides.length === 0 || globalKioskConfig.show_printers === false) && images.length > 0) {
-                 images.forEach(image => {
-                    slides.push({ isImage: true, url: image.url, time: image.time });
-                 });
-            } else {
-                for (let i = 0; i < printerSlides.length; i++) {
-                    slides.push(printerSlides[i]);
-                    if (images.length > 0 && (i + 1) % imageFrequency === 0) {
-                        for (let j = 0; j < imagesPerSlot; j++) {
-                            const image = images[imageIndex % images.length];
-                            slides.push({ isImage: true, url: image.url, time: image.time });
-                            imageIndex++;
-                        }
+            
+            for (let i = 0; i < printerSlides.length; i++) {
+                slides.push(printerSlides[i]);
+                if (images.length > 0 && (i + 1) % imageFrequency === 0) {
+                    for (let j = 0; j < imagesPerSlot; j++) {
+                        const image = images[imageIndex % images.length];
+                        slides.push({ isImage: true, url: image.url, time: image.time });
+                        imageIndex++;
                     }
                 }
             }
@@ -212,11 +208,9 @@
                 kioskContainer.appendChild(slideDiv);
             });
 
-            // Continue slideshow from the previous slide when rebuilding
             if (currentSlideIndex >= slides.length) {
                 currentSlideIndex = 0;
             }
-            cycleSlide();
         }
         
         function cycleSlide() {
@@ -255,13 +249,14 @@
         }
 
         function initialLoad() {
-            $.getJSON('/status', {kiosk: kioskId})
+            $.getJSON(`/status?kiosk=${kioskId}`)
                 .done(data => {
                     const refreshInterval = (data.config.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-
+                    cycleSlide();
+                    
                     setInterval(() => {
-                        $.getJSON('/status', {kiosk: kioskId}).done(buildAndRenderSlides);
+                        $.getJSON(`/status?kiosk=${kioskId}`).done(buildAndRenderSlides);
                     }, refreshInterval);
                 })
                 .fail(() => {

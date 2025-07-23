@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kiosk Display</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; cursor: none; }
+        #kiosk-container { width: 100%; height: 100%; position: relative; }
+        .slide { width: 100%; height: 100%; position: absolute; top: 0; left: 0; opacity: 0; transition: opacity 1s ease-in-out; background-size: contain; background-position: center; background-repeat: no-repeat; }
+        .slide.active { opacity: 1; z-index: 1; }
+    </style>
+</head>
+<body>
+    <div id="kiosk-container"><h1 style="text-align:center; padding-top: 2rem; color: white;">Loading Display...</h1></div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        const kioskContainer = document.getElementById('kiosk-container');
+        const kioskId = "{{ kiosk_id }}";
+        let slides = [];
+        let currentSlideIndex = 0;
+        let slideTimeout;
+
+        function buildAndRenderSlides(data) {
+            const kioskConfig = data.kiosk_config || {};
+            document.body.style.backgroundColor = kioskConfig.kiosk_background_color || '#000';
+
+            slides = kioskConfig.kiosk_images || [];
+            
+            kioskContainer.innerHTML = '';
+            if (slides.length === 0) {
+                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">Please add an image</h1>';
+                return;
+            }
+
+            slides.forEach((slideData, index) => {
+                const slideDiv = document.createElement('div');
+                slideDiv.className = 'slide';
+                slideDiv.id = 'slide-' + index;
+                slideDiv.style.backgroundImage = `url(${slideData.url})`;
+                kioskContainer.appendChild(slideDiv);
+            });
+
+            // Don't reset the slide index if it's still valid
+            if (currentSlideIndex >= slides.length) {
+                currentSlideIndex = 0;
+            }
+        }
+        
+        function cycleSlide() {
+            clearTimeout(slideTimeout);
+            if (slides.length === 0) return;
+
+            document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
+
+            const current = slides[currentSlideIndex];
+            if (!current) {
+                currentSlideIndex = 0;
+                cycleSlide();
+                return;
+            }
+
+            let slideEl = document.getElementById('slide-' + currentSlideIndex);
+            if (!slideEl) {
+                console.warn(`slide-${currentSlideIndex} not found, falling back to slide-0`);
+                currentSlideIndex = 0;
+                slideEl = document.getElementById('slide-0');
+                if (!slideEl) return;
+            }
+
+            slideEl.classList.add('active');
+
+            if (slides.length <= 1) return;
+
+            const delaySec = current.time || 5;
+            
+            currentSlideIndex = (currentSlideIndex + 1) % slides.length;
+            slideTimeout = setTimeout(cycleSlide, delaySec * 1000);
+        }
+
+        function initialLoad() {
+            $.getJSON(`/kiosk_data/${kioskId}`)
+                .done(data => {
+                    const refreshInterval = (data.refresh_interval_sec || 30) * 1000;
+                    buildAndRenderSlides(data);
+                    cycleSlide(); // Start the slideshow
+                    
+                    // Set up a separate timer to refresh the data in the background
+                    setInterval(() => {
+                        $.getJSON(`/kiosk_data/${kioskId}`).done(buildAndRenderSlides);
+                    }, refreshInterval);
+                })
+                .fail(() => {
+                    kioskContainer.innerHTML = '<h1 style="text-align:center; color: red; padding-top: 2rem;">Error fetching kiosk data. Retrying...</h1>';
+                    setTimeout(initialLoad, 5000);
+                });
+        }
+
+        $(document).ready(function(){
+            initialLoad();
+        });
+    </script>
+</body>
+</html>

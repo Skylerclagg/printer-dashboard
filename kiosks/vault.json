@@ -1,0 +1,28 @@
+{
+  "kiosk_background_color": "#6c757d",
+  "kiosk_header_height_px": 300,
+  "kiosk_header_image": "/static/kiosk_images/vault/header_header_Printer_Status_1.png",
+  "kiosk_image_frequency": 1,
+  "kiosk_image_page_time": 5,
+  "kiosk_images": [
+    {
+      "time": 5,
+      "url": "/static/kiosk_images/vault/STEM-Venture-Camp-2.png"
+    },
+    {
+      "time": 5,
+      "url": "/static/kiosk_images/vault/Makes_Fest_for_screen.jpg"
+    },
+    {
+      "time": 5,
+      "url": "/static/kiosk_images/vault/MUAMC_Updated_Screensaver.jpg"
+    }
+  ],
+  "kiosk_images_per_slot": 3,
+  "kiosk_printer_page_time": 10,
+  "kiosk_printers_per_page": 3,
+  "kiosk_sort_by": "status",
+  "kiosk_title": "",
+  "name": "MakerVault TV",
+  "show_printers": true
+}
