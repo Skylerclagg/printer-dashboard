@@ -34,7 +34,9 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .permissions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-        #log-viewer { width: 100%; height: 600px; border: 1px solid #dee2e6; border-radius: 4px; white-space: pre-wrap; background: #212529; color: #f8f9fa; padding: 1rem; box-sizing: border-box; }
+        #log-viewer { width: 100%; height: 600px; border: 1px solid #dee2e6; border-radius: 4px; white-space: pre-wrap; background: #212529; color: #f8f9fa; padding: 1rem; box-sizing: border-box; overflow: auto; }
+        .form-section h3 { cursor: pointer; }
+        .form-section.collapsed > *:not(h3) { display: none; }
         #sortable-printers li, #sortable-statuses li, .sortable-images li { padding: 10px; background-color: #e9ecef; margin-bottom: 5px; border-radius: 4px; cursor: grab; }
         #sortable-printers li:active, #sortable-statuses li:active, .sortable-images li:active { cursor: grabbing; }
         small { color: #6c757d; font-size: 0.85em; }
@@ -532,7 +534,7 @@
                 <label for="kiosk-select"><strong>Select Kiosk to Configure:</strong></label>
                 <select id="kiosk-select" onchange="displayKioskSettings(this.value)" style="margin-bottom: 1.5rem; max-width: 300px;">
                     {% for kid, kc in permitted_kiosks.items() %}
-                    <option value="{{ kid }}">{{ kc.name }}</option>
+                    <option value="{{ kid }}" {% if kid == selected_kiosk %}selected{% endif %}>{{ kc.name }}</option>
                     {% endfor %}
                 </select>
 
@@ -637,6 +639,11 @@
             if (target) target.style.display = 'block';
         }
 
+        function toggleSection(header) {
+            const section = header.parentElement;
+            section.classList.toggle('collapsed');
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const activeTab = "{{ active_tab }}";
             const targetTab = document.querySelector(`.tab-button[data-tab="${activeTab}"]`);
@@ -645,10 +652,12 @@
             } else {
                 document.querySelector('.tab-button').click();
             }
-            
-            const firstKioskId = document.getElementById('kiosk-select')?.value;
-            if (firstKioskId) {
-                displayKioskSettings(firstKioskId);
+
+            const selectedKiosk = "{{ selected_kiosk }}";
+            const kioskSelect = document.getElementById('kiosk-select');
+            if (kioskSelect) {
+                if (selectedKiosk) kioskSelect.value = selectedKiosk;
+                displayKioskSettings(kioskSelect.value);
             }
             
             new Sortable(document.getElementById('sortable-printers'), { animation: 150 });
@@ -690,6 +699,10 @@
             }
             document.getElementById('add-printer-type').addEventListener('change', handleAddFormDisplay);
             handleAddFormDisplay();
+
+            document.querySelectorAll('.form-section h3').forEach(h => {
+                h.addEventListener('click', () => toggleSection(h));
+            });
         });
     </script>
 </body>

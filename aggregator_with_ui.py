@@ -48,7 +48,9 @@ BASE_PERMISSIONS = [
     'add_user', 'delete_user', 'change_user_password', 'change_user_role',
     'add_role', 'edit_role', 'delete_role',
     'manage_appearance', 'manage_statuses', 'manage_aliases',
-    'add_kiosk', 'delete_kiosk', 'rename_kiosk', 'manage_kiosk_settings', 'manage_kiosk_images'
+    'add_kiosk', 'delete_kiosk', 'rename_kiosk',
+    'manage_kiosk_settings', 'manage_printer_kiosks', 'manage_image_kiosks',
+    'manage_kiosk_images'
 ]
 
 def get_available_permissions():
@@ -157,6 +159,16 @@ def list_kiosk_configs():
             kiosks[kid] = get_kiosk_config(kid)
     return kiosks
 
+def has_kiosk_permission(user_permissions, kiosk_id):
+    kiosk_cfg = get_kiosk_config(kiosk_id)
+    if 'manage_kiosk_settings' in user_permissions or 'manage_all_kiosks' in user_permissions:
+        return True
+    if kiosk_cfg.get('show_printers', True) and 'manage_printer_kiosks' in user_permissions:
+        return True
+    if not kiosk_cfg.get('show_printers', True) and 'manage_image_kiosks' in user_permissions:
+        return True
+    return f'manage_kiosk_{kiosk_id}' in user_permissions
+
 def require_permission(permission):
     def decorator(f):
         @wraps(f)
@@ -168,12 +180,17 @@ def require_permission(permission):
             roles = load_data(ROLES_FILE, {})
             user_permissions = roles.get(user_role_name, {}).get('permissions', [])
             
-            if permission.startswith('manage_kiosk_'):
+            if permission in ('manage_kiosk_settings', 'manage_kiosk_images'):
+                kiosk_id = kwargs.get('kiosk_id') or request.form.get('kiosk_id', 'default')
+                if not has_kiosk_permission(user_permissions, kiosk_id) and '*' not in user_permissions:
+                    flash('You do not have sufficient permissions for this kiosk.', 'danger')
+                    return redirect(url_for('admin'))
+            elif permission.startswith('manage_kiosk_'):
                 kiosk_id = kwargs.get('kiosk_id') or request.form.get('kiosk_id')
                 required_perm = f'manage_kiosk_{kiosk_id}'
                 if required_perm not in user_permissions and '*' not in user_permissions:
-                     flash('You do not have sufficient permissions for this specific kiosk.', 'danger')
-                     return redirect(url_for('admin'))
+                    flash('You do not have sufficient permissions for this specific kiosk.', 'danger')
+                    return redirect(url_for('admin'))
             elif permission not in user_permissions and '*' not in user_permissions:
                 flash('You do not have sufficient permissions for this action.', 'danger')
                 return redirect(url_for('admin'))
@@ -392,10 +409,11 @@ def admin():
     
     permitted_kiosks = {
         kid: conf for kid, conf in kiosk_configs.items()
-        if f'manage_kiosk_{kid}' in user_permissions or 'manage_kiosk_settings' in user_permissions
+        if has_kiosk_permission(user_permissions, kid)
     }
-    
+
     active_tab = request.args.get('tab', 'printer-config')
+    selected_kiosk = request.args.get('kiosk', 'default')
 
     return render_template('admin.html', 
         printers=printers, 
@@ -410,7 +428,8 @@ def admin():
         available_permissions=perms, 
         log_content=log_content,
         user_permissions=user_permissions,
-        active_tab=active_tab)
+        active_tab=active_tab,
+        selected_kiosk=selected_kiosk)
 
 @app.route('/admin/printers', methods=['POST'])
 def manage_printers():
@@ -422,7 +441,7 @@ def manage_printers():
         return delete_printer(active_tab)
     
     flash('Invalid action specified.', 'danger')
-    return redirect(url_for('admin', tab=active_tab))
+    return redirect(url_for('admin', tab=active_tab, kiosk=new_kiosk_id))
 
 @require_permission('add_printer')
 def add_printer(active_tab):
@@ -713,7 +732,7 @@ def update_kiosk(active_tab):
     
     save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
     flash(f"Kiosk '{kiosk_id}' settings updated.", 'success')
-    return redirect(url_for('admin', tab=active_tab))
+    return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
 
 @require_permission('manage_statuses')
 def update_colors(active_tab):
@@ -821,7 +840,7 @@ def manage_kiosk_images():
 
     save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
     flash(f"Kiosk '{kiosk_id}' images updated.", 'success')
-    return redirect(url_for('admin', tab=active_tab))
+    return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
 
 
 @app.route('/admin/kiosks', methods=['POST'], endpoint='manage_kiosks')
@@ -857,7 +876,7 @@ def add_kiosk(active_tab):
         config['show_printers'] = 'show_printers' in request.form
         save_data(config, path)
         flash(f"Kiosk '{kiosk_id}' added and image directory created.", 'success')
-    return redirect(url_for('admin', tab=active_tab))
+    return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
 
 @require_permission('delete_kiosk')
 def delete_kiosk(active_tab):
@@ -946,7 +965,7 @@ def edit_kiosk(active_tab):
     save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
     
     flash(f"Kiosk '{kiosk_id}' display type updated.", 'success')
-    return redirect(url_for('admin', tab=active_tab))
+    return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
 
 
 @app.route('/dashboard')
@@ -976,9 +995,10 @@ if __name__ == '__main__':
                 "permissions": [
                     'view_dashboard', 'set_overrides', 'view_logs',
                     'add_printer', 'edit_printer', 'delete_printer',
-                    'add_kiosk', 'delete_kiosk', 'rename_kiosk', 
-                    'manage_kiosk_settings', 'manage_kiosk_images'
-                ], 
+                    'add_kiosk', 'delete_kiosk', 'rename_kiosk',
+                    'manage_kiosk_settings', 'manage_printer_kiosks',
+                    'manage_image_kiosks', 'manage_kiosk_images'
+                ],
                 "level": 50
             }, 
             "intern": {"permissions": ["view_dashboard", "set_overrides"], "level": 10}
