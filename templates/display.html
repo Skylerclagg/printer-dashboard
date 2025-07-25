@@ -48,6 +48,9 @@
 
             // Ensure the currently selected slide remains visible
             showCurrentSlide();
+
+            // Restart the slideshow timer using the current slide's delay
+            cycleSlide();
         }
 
         function showCurrentSlide() {
@@ -86,7 +89,6 @@
                 .done(data => {
                     const refreshInterval = (data.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    cycleSlide(); // Start the slideshow
                     
                     // Set up a separate timer to refresh the data in the background
                     setInterval(() => {

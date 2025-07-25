@@ -214,6 +214,9 @@
 
             // Ensure a slide is visible immediately after rebuilding
             showCurrentSlide();
+
+            // Restart the slideshow timer using the current slide's timing
+            cycleSlide();
         }
 
         function showCurrentSlide() {
@@ -262,7 +265,6 @@
                 .done(data => {
                     const refreshInterval = (data.config.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    cycleSlide();
                     
                     setInterval(() => {
                         $.getJSON(`/status?kiosk=${kioskId}`).done(buildAndRenderSlides);
