@@ -660,8 +660,11 @@
                 displayKioskSettings(kioskSelect.value);
             }
             
-            new Sortable(document.getElementById('sortable-printers'), { animation: 150 });
-            new Sortable(document.getElementById('sortable-statuses'), { animation: 150 });
+            const sortablePrintersEl = document.getElementById('sortable-printers');
+            if (sortablePrintersEl) new Sortable(sortablePrintersEl, { animation: 150 });
+
+            const sortableStatusesEl = document.getElementById('sortable-statuses');
+            if (sortableStatusesEl) new Sortable(sortableStatusesEl, { animation: 150 });
 
             document.querySelectorAll('.sortable-images').forEach(list => {
                 new Sortable(list, { 
@@ -697,8 +700,11 @@
                     fieldsToShow.querySelectorAll('input').forEach(input => input.disabled = false);
                 }
             }
-            document.getElementById('add-printer-type').addEventListener('change', handleAddFormDisplay);
-            handleAddFormDisplay();
+            const addTypeEl = document.getElementById('add-printer-type');
+            if (addTypeEl) {
+                addTypeEl.addEventListener('change', handleAddFormDisplay);
+                handleAddFormDisplay();
+            }
 
             document.querySelectorAll('.form-section h3').forEach(h => {
                 h.addEventListener('click', () => toggleSection(h));
