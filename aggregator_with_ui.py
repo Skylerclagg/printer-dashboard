@@ -64,6 +64,8 @@ app = Flask(__name__)
 app.secret_key = 'a-very-secret-and-random-key-that-you-should-change'
 app.config['PRINTER_UPLOAD_FOLDER'] = PRINTER_UPLOAD_FOLDER
 app.config['KIOSK_UPLOAD_FOLDER'] = KIOSK_UPLOAD_FOLDER
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True
 
 # --- LOGGING SETUP ---------------------------------------------------------
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
