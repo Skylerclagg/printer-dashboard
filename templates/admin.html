@@ -338,13 +338,13 @@
                     {% for username, data in users.items() %}
                     <tr><td>{{ username }}</td><td>{{ data.role }}</td>
                         <td>
-                            {% if roles[data.role].level < roles[session.role].level %}
+                            {% if roles[data.role].level < roles[session.role].level or session.role == 'system' %}
                             {% if 'change_user_role' in user_permissions %}
                             <form action="{{ url_for('manage_users') }}" method="POST" style="display:inline-flex;">
                                 <input type="hidden" name="active_tab" value="user-role">
                                 <input type="hidden" name="action" value="change_role"><input type="hidden" name="username" value="{{ username }}">
                                 <select name="role" onchange="this.form.submit()">
-                                    {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level %}
+                                    {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level or session.role == 'system' %}
                                     <option value="{{ role_name }}" {% if data.role == role_name %}selected{% endif %}>{{ role_name }}</option>
                                     {% endif %}{% endfor %}
                                 </select>
@@ -375,7 +375,7 @@
                         <div><label>Password</label><input type="password" name="password" required></div>
                         <div><label>Role</label>
                             <select name="role">
-                                {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level %}
+                                {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level or session.role == 'system' %}
                                 <option value="{{ role_name }}">{{ role_name }}</option>
                                 {% endif %}{% endfor %}
                             </select>
@@ -394,7 +394,7 @@
                     <div class="form-grid">
                         <div><label>Username</label>
                             <select name="username">
-                                {% for u, d in users.items() %}{% if roles[d.role].level < roles[session.role].level or u == session.username %}
+                                {% for u, d in users.items() %}{% if roles[d.role].level < roles[session.role].level or u == session.username or session.role == 'system' %}
                                 <option value="{{ u }}">{{ u }}</option>
                                 {% endif %}{% endfor %}
                             </select>

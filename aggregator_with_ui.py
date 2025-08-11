@@ -735,7 +735,7 @@ def add_user(active_tab):
     password = request.form.get('password')
     role = request.form.get('role')
     if username and password and role and username not in users:
-        if roles.get(role, {}).get('level', 999) >= logged_in_role_level:
+        if session.get('role') != 'system' and roles.get(role, {}).get('level', 999) >= logged_in_role_level:
             flash('You cannot create a user with a role equal to or higher than your own.', 'danger')
         else:
             users[username] = {'password': generate_password_hash(password), 'role': role}
@@ -751,7 +751,10 @@ def delete_user(active_tab):
     roles = load_data(ROLES_FILE, {})
     logged_in_role_level = roles.get(session.get('role'), {}).get('level', 0)
     username_to_delete = request.form.get('username')
-    if username_to_delete in users and roles.get(users[username_to_delete]['role'], {}).get('level', 999) < logged_in_role_level:
+    if username_to_delete in users and (
+        session.get('role') == 'system' or
+        roles.get(users[username_to_delete]['role'], {}).get('level', 999) < logged_in_role_level
+    ):
         del users[username_to_delete]
         save_data(users, USERS_FILE)
         flash(f"User '{username_to_delete}' deleted.", 'success')
@@ -768,7 +771,11 @@ def change_user_password(active_tab):
     username_to_change = request.form.get('username')
     new_password = request.form.get('new_password')
     target_user_level = roles.get(users.get(username_to_change, {}).get('role'), {}).get('level', 999)
-    if username_to_change in users and new_password and (target_user_level < logged_in_role_level or logged_in_user == username_to_change):
+    if username_to_change in users and new_password and (
+        session.get('role') == 'system' or
+        target_user_level < logged_in_role_level or
+        logged_in_user == username_to_change
+    ):
         users[username_to_change]['password'] = generate_password_hash(new_password)
         save_data(users, USERS_FILE)
         flash(f"Password for '{username_to_change}' has been changed.", 'success')
@@ -783,7 +790,10 @@ def change_user_role(active_tab):
     logged_in_role_level = roles.get(session.get('role'), {}).get('level', 0)
     username_to_change = request.form.get('username')
     new_role = request.form.get('role')
-    if username_to_change in users and new_role in roles and roles[new_role].get('level', 999) < logged_in_role_level:
+    if username_to_change in users and new_role in roles and (
+        session.get('role') == 'system' or
+        roles[new_role].get('level', 999) < logged_in_role_level
+    ):
         users[username_to_change]['role'] = new_role
         save_data(users, USERS_FILE)
         flash(f"Role for '{username_to_change}' updated.", 'success')
