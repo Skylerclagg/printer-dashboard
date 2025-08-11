@@ -27,6 +27,9 @@
 </head>
 <body>
     <h1>{{ dashboard_title }}</h1>
+    {% if can_submit %}
+    <p style="text-align:center;"><a href="{{ url_for('submit_print') }}">Submit a Print</a></p>
+    {% endif %}
     <div id="dash"><p>Loading printer statuses...</p></div>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>

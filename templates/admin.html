@@ -549,6 +549,14 @@
                         <div class="form-grid">
                             <div><label>Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}"></div>
                             {% if kconf.show_printers %}
+                            <div>
+                                <label>Printers to Display</label>
+                                <select name="kiosk_printers" multiple size="5">
+                                    {% for p in printers %}
+                                    <option value="{{ p.name }}" {% if p.name in kconf.kiosk_printers %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
                             <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
                             <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>

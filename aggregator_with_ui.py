@@ -264,6 +264,7 @@ DEFAULT_KIOSK_CONFIG = {
     "kiosk_image_frequency": 2,
     "kiosk_images_per_slot": 1,
     "kiosk_images": [],
+    "kiosk_printers": [],
     "kiosk_background_color": "#000000",
     "kiosk_sort_by": "manual",
     "kiosk_title": "",
@@ -287,6 +288,8 @@ def get_kiosk_config(kiosk_id='default'):
     config.update(user_config)
     if 'show_printers' not in config:
         config['show_printers'] = True
+    if 'kiosk_printers' not in config:
+        config['kiosk_printers'] = []
     return config
 
 def list_kiosk_configs():
@@ -501,10 +504,17 @@ def status():
         if name in overrides and overrides[name].get('status'):
             processed_data[name]['state'] = overrides[name]['status']
             processed_data[name]['override'] = True
-        
+
         original_state = processed_data[name].get('state')
         if original_state in aliases and aliases[original_state]:
             processed_data[name]['state'] = aliases[original_state]
+
+    if kiosk_config.get('show_printers'):
+        allowed = kiosk_config.get('kiosk_printers', [])
+        if allowed:
+            processed_data = {name: data for name, data in processed_data.items() if name in allowed}
+    else:
+        processed_data = {}
 
     return jsonify({**processed_data, 'config': config, 'kiosk_config': kiosk_config})
 
@@ -914,6 +924,7 @@ def update_kiosk(active_tab):
         kiosk_config['kiosk_printer_page_time'] = int(request.form.get('kiosk_printer_page_time', 10))
         kiosk_config['kiosk_image_frequency'] = int(request.form.get('kiosk_image_frequency', 2))
         kiosk_config['kiosk_images_per_slot'] = int(request.form.get('kiosk_images_per_slot', 1))
+        kiosk_config['kiosk_printers'] = request.form.getlist('kiosk_printers')
         kiosk_config['kiosk_sort_by'] = request.form.get('kiosk_sort_by', 'manual')
         kiosk_config['kiosk_title'] = request.form.get('kiosk_title', '')
         kiosk_config['kiosk_header_height_px'] = int(request.form.get('kiosk_header_height_px', 150))
@@ -1074,6 +1085,7 @@ def add_kiosk(active_tab):
         config = DEFAULT_KIOSK_CONFIG.copy()
         config['name'] = request.form.get('kiosk_name', kiosk_id)
         config['show_printers'] = 'show_printers' in request.form
+        config['kiosk_printers'] = []
         save_data(config, path)
         flash(f"Kiosk '{kiosk_id}' added and image directory created.", 'success')
     return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
@@ -1172,7 +1184,12 @@ def edit_kiosk(active_tab):
 def dashboard():
     config = get_full_config()
     dashboard_title = config.get('dashboard_title', 'Printer Dashboard')
-    return render_template('dashboard.html', dashboard_title=dashboard_title)
+    can_submit = False
+    if 'username' in session:
+        roles = load_data(ROLES_FILE, {})
+        perms = roles.get(session.get('role', ''), {}).get('permissions', [])
+        can_submit = 'submit_print' in perms or '*' in perms
+    return render_template('dashboard.html', dashboard_title=dashboard_title, can_submit=can_submit)
 
 @app.route('/kiosk')
 @app.route('/kiosk/<kiosk_id>')
