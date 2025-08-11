@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Submit Print</title>
+</head>
+<body>
+    <h1>Submit G-code</h1>
+    <form method="post" enctype="multipart/form-data">
+        <label for="gcode">G-code File:</label>
+        <input type="file" name="gcode" required><br>
+        <label for="printers">Printers:</label>
+        <select name="printers" multiple required>
+            {% for p in printers %}
+            <option value="{{ p['name'] }}">{{ p['name'] }}</option>
+            {% endfor %}
+        </select><br>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>

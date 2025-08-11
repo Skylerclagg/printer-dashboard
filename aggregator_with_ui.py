@@ -22,6 +22,7 @@ import time
 import requests
 import logging
 import shutil
+import sqlite3
 from flask import Flask, jsonify, request, redirect, url_for, render_template, session, flash, Response
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -38,9 +39,13 @@ KIOSK_DIR = os.path.join(BASE_DIR, 'kiosks')
 LOG_FILE = os.path.join(BASE_DIR, 'activity.log')
 PRINTER_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/printer_images')
 KIOSK_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/kiosk_images')
+GCODE_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+APP_DB = os.path.join(BASE_DIR, 'app.db')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_GCODE_EXTENSIONS = {'gcode'}
 CACHE_TTL = 5 # Lower TTL for more responsive status discovery
 HTTP_PORT = 80
+DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 
 BASE_PERMISSIONS = [
     'view_dashboard', 'set_overrides', 'view_logs',
@@ -50,13 +55,20 @@ BASE_PERMISSIONS = [
     'manage_appearance', 'manage_statuses', 'manage_aliases',
     'add_kiosk', 'delete_kiosk', 'rename_kiosk',
     'manage_kiosk_settings', 'manage_printer_kiosks', 'manage_image_kiosks',
-    'manage_kiosk_images'
+    'manage_kiosk_images', 'submit_print', 'approve_print'
 ]
 
+def list_kiosk_ids():
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    prefix = os.path.relpath(KIOSK_DIR, BASE_DIR) + '/'
+    c.execute("SELECT key FROM kv_store WHERE key LIKE ?", (prefix + '%',))
+    rows = c.fetchall()
+    conn.close()
+    return [os.path.basename(r[0]).split('.')[0] for r in rows]
+
 def get_available_permissions():
-    kiosks = []
-    if os.path.isdir(KIOSK_DIR):
-        kiosks = [f.split('.')[0] for f in os.listdir(KIOSK_DIR) if f.endswith('.json')]
+    kiosks = list_kiosk_ids()
     kiosk_perms = [f'manage_kiosk_{k}' for k in kiosks]
     return BASE_PERMISSIONS + kiosk_perms
 
@@ -64,6 +76,7 @@ app = Flask(__name__)
 app.secret_key = 'a-very-secret-and-random-key-that-you-should-change'
 app.config['PRINTER_UPLOAD_FOLDER'] = PRINTER_UPLOAD_FOLDER
 app.config['KIOSK_UPLOAD_FOLDER'] = KIOSK_UPLOAD_FOLDER
+app.config['GCODE_UPLOAD_FOLDER'] = GCODE_UPLOAD_FOLDER
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_SECURE'] = True
 
@@ -76,19 +89,143 @@ log.setLevel(logging.ERROR)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def allowed_gcode_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_GCODE_EXTENSIONS
+
+def _kv_key(path):
+    return os.path.relpath(path, BASE_DIR)
+
 def load_data(file_path, default_data):
-    if not os.path.exists(file_path):
-        save_data(default_data, file_path)
-    try:
-        with open(file_path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        logging.error(f"Could not read or decode JSON from {file_path}. Returning default data.")
-        return default_data
+    key = _kv_key(file_path)
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute("SELECT value FROM kv_store WHERE key=?", (key,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        try:
+            return json.loads(row[0])
+        except json.JSONDecodeError:
+            logging.error(f"Could not decode JSON for {file_path}. Returning default data.")
+            return default_data
+    if os.path.exists(file_path):
+        try:
+            with open(file_path) as f:
+                data = json.load(f)
+            save_data(data, file_path)
+            return data
+        except Exception:
+            logging.error(f"Could not migrate JSON file {file_path} to DB.")
+    save_data(default_data, file_path)
+    return default_data
 
 def save_data(data, file_path):
-    with open(file_path, 'w') as f:
-        json.dump(data, f, indent=2, sort_keys=True)
+    key = _kv_key(file_path)
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute(
+        "REPLACE INTO kv_store (key, value) VALUES (?, ?)",
+        (key, json.dumps(data, indent=2, sort_keys=True)),
+    )
+    conn.commit()
+    conn.close()
+
+def delete_data(file_path):
+    key = _kv_key(file_path)
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute("DELETE FROM kv_store WHERE key=?", (key,))
+    conn.commit()
+    conn.close()
+
+def data_exists(file_path):
+    key = _kv_key(file_path)
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM kv_store WHERE key=?", (key,))
+    exists = c.fetchone() is not None
+    conn.close()
+    return exists
+
+def init_db():
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS print_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user TEXT,
+            filename TEXT,
+            printers TEXT,
+            status TEXT,
+            timestamp REAL
+        )
+        """
+    )
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kv_store (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def add_job(user, filename, printers, status):
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO print_jobs (user, filename, printers, status, timestamp) VALUES (?,?,?,?,?)",
+        (user, filename, json.dumps(printers), status, time.time()),
+    )
+    job_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return job_id
+
+
+def get_queue():
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute("SELECT id, user, filename, printers, status, timestamp FROM print_jobs ORDER BY id")
+    rows = c.fetchall()
+    conn.close()
+    queue = []
+    for row in rows:
+        queue.append(
+            {
+                "id": row[0],
+                "user": row[1],
+                "filename": row[2],
+                "printers": json.loads(row[3]) if row[3] else [],
+                "status": row[4],
+                "timestamp": row[5],
+            }
+        )
+    return queue
+
+
+def update_job_status(job_id, status):
+    conn = sqlite3.connect(APP_DB)
+    c = conn.cursor()
+    c.execute("UPDATE print_jobs SET status=? WHERE id=?", (status, job_id))
+    conn.commit()
+    conn.close()
+
+
+def get_queue_length(printer_name):
+    queue = get_queue()
+    return sum(
+        1
+        for job in queue
+        if printer_name in job.get("printers", []) and job.get("status") in ("pending", "approved")
+    )
+
+
+init_db()
 
 def get_full_config():
     """Loads user config and merges it with defaults to ensure all keys exist."""
@@ -135,10 +272,11 @@ DEFAULT_KIOSK_CONFIG = {
     "show_printers": True
 }
 
+def kiosk_key(kiosk_id):
+    return os.path.join(KIOSK_DIR, f"{kiosk_id}.json")
+
 def get_kiosk_config(kiosk_id='default'):
-    if not os.path.isdir(KIOSK_DIR):
-        os.makedirs(KIOSK_DIR, exist_ok=True)
-    config_path = os.path.join(KIOSK_DIR, f"{kiosk_id}.json")
+    config_path = kiosk_key(kiosk_id)
     user_config = load_data(config_path, DEFAULT_KIOSK_CONFIG)
 
     if user_config.get('kiosk_images') and all(isinstance(img, str) for img in user_config['kiosk_images']):
@@ -152,13 +290,9 @@ def get_kiosk_config(kiosk_id='default'):
     return config
 
 def list_kiosk_configs():
-    if not os.path.isdir(KIOSK_DIR):
-        os.makedirs(KIOSK_DIR, exist_ok=True)
     kiosks = {}
-    for file in os.listdir(KIOSK_DIR):
-        if file.endswith('.json'):
-            kid = file.split('.')[0]
-            kiosks[kid] = get_kiosk_config(kid)
+    for kid in list_kiosk_ids():
+        kiosks[kid] = get_kiosk_config(kid)
     return kiosks
 
 def has_kiosk_permission(user_permissions, kiosk_id):
@@ -353,9 +487,17 @@ def status():
     overrides = load_data(OVERRIDES_FILE, {})
     aliases = config.get('status_aliases', {})
 
+    queue_counts = {}
+    queue = get_queue()
+    for job in queue:
+        if job.get('status') in ('pending', 'approved'):
+            for p in job.get('printers', []):
+                queue_counts[p] = queue_counts.get(p, 0) + 1
+
     processed_data = {}
     for name, data in status_data.items():
         processed_data[name] = data.copy()
+        processed_data[name]['queue_length'] = queue_counts.get(name, 0)
         if name in overrides and overrides[name].get('status'):
             processed_data[name]['state'] = overrides[name]['status']
             processed_data[name]['override'] = True
@@ -375,6 +517,52 @@ def kiosk_data(kiosk_id):
         "kiosk_config": kiosk_config,
         "refresh_interval_sec": main_config.get("refresh_interval_sec", 30)
     })
+
+@app.route('/submit_print', methods=['GET', 'POST'])
+@require_permission('submit_print')
+def submit_print():
+    printers = load_data(PRINTERS_FILE, [])
+    if request.method == 'POST':
+        file = request.files.get('gcode')
+        selected_printers = request.form.getlist('printers')
+        if not file or file.filename == '' or not allowed_gcode_file(file.filename) or not selected_printers:
+            flash('Please provide a valid G-code file and select printers.', 'danger')
+            return redirect(url_for('submit_print'))
+        os.makedirs(GCODE_UPLOAD_FOLDER, exist_ok=True)
+        filename = secure_filename(f"{int(time.time())}_" + file.filename)
+        path = os.path.join(GCODE_UPLOAD_FOLDER, filename)
+        file.save(path)
+        all_printers = {p['name']: p for p in printers}
+        requires_approval = any(all_printers.get(p, {}).get('requires_approval') for p in selected_printers)
+        status = 'pending' if requires_approval else 'approved'
+        job_id = add_job(session.get('username'), filename, selected_printers, status)
+        logging.info(f"{session.get('username')} submitted {filename} to {selected_printers} (status: {status})")
+        if DISCORD_WEBHOOK_URL:
+            try:
+                requests.post(DISCORD_WEBHOOK_URL, json={'content': f"{session.get('username')} submitted {filename} to {', '.join(selected_printers)}"})
+            except Exception as e:
+                logging.error(f"Discord webhook failed: {e}")
+        flash('Print submitted.' + (' Awaiting approval.' if status == 'pending' else ''), 'success')
+        return redirect(url_for('submit_print'))
+    return render_template('submit_print.html', printers=printers)
+
+@app.route('/queue')
+@require_permission('approve_print')
+def view_queue():
+    queue = get_queue()
+    return render_template('queue.html', queue=queue)
+
+@app.route('/queue/approve/<int:job_id>', methods=['POST'])
+@require_permission('approve_print')
+def approve_job(job_id):
+    update_job_status(job_id, 'approved')
+    logging.info(f"{session.get('username')} approved job {job_id}")
+    if DISCORD_WEBHOOK_URL:
+        try:
+            requests.post(DISCORD_WEBHOOK_URL, json={'content': f"Job {job_id} approved by {session.get('username')}"})
+        except Exception as e:
+            logging.error(f"Discord webhook failed: {e}")
+    return redirect(url_for('view_queue'))
 
 @app.route('/admin')
 @require_permission('view_dashboard')
@@ -732,7 +920,7 @@ def update_kiosk(active_tab):
     if name:
         kiosk_config['name'] = name
     
-    save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+    save_data(kiosk_config, kiosk_key(kiosk_id))
     flash(f"Kiosk '{kiosk_id}' settings updated.", 'success')
     return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
 
@@ -840,7 +1028,7 @@ def manage_kiosk_images():
                 if not any(img['url'] == image_url for img in kiosk_config['kiosk_images']):
                     kiosk_config['kiosk_images'].append({'url': image_url, 'time': default_time})
 
-    save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+    save_data(kiosk_config, kiosk_key(kiosk_id))
     flash(f"Kiosk '{kiosk_id}' images updated.", 'success')
     return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
 
@@ -866,13 +1054,13 @@ def add_kiosk(active_tab):
     if not kiosk_id:
         flash('Kiosk ID required.', 'danger')
         return redirect(url_for('admin', tab=active_tab))
-    path = os.path.join(KIOSK_DIR, f"{kiosk_id}.json")
-    if os.path.exists(path):
+    path = kiosk_key(kiosk_id)
+    if kiosk_id in list_kiosk_ids():
         flash(f"Kiosk with ID '{kiosk_id}' already exists.", 'danger')
     else:
         kiosk_image_dir = os.path.join(app.config['KIOSK_UPLOAD_FOLDER'], kiosk_id)
         os.makedirs(kiosk_image_dir, exist_ok=True)
-        
+
         config = DEFAULT_KIOSK_CONFIG.copy()
         config['name'] = request.form.get('kiosk_name', kiosk_id)
         config['show_printers'] = 'show_printers' in request.form
@@ -883,13 +1071,13 @@ def add_kiosk(active_tab):
 @require_permission('delete_kiosk')
 def delete_kiosk(active_tab):
     kiosk_id = secure_filename(request.form.get('kiosk_id', '').strip())
-    try:
-        os.remove(os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+    if kiosk_id in list_kiosk_ids():
+        delete_data(kiosk_key(kiosk_id))
         kiosk_image_dir = os.path.join(app.config['KIOSK_UPLOAD_FOLDER'], kiosk_id)
         if os.path.isdir(kiosk_image_dir):
             shutil.rmtree(kiosk_image_dir)
         flash(f"Kiosk '{kiosk_id}' and its assets have been deleted.", 'success')
-    except FileNotFoundError:
+    else:
         flash(f"Kiosk '{kiosk_id}' not found.", 'danger')
     return redirect(url_for('admin', tab=active_tab))
 
@@ -903,34 +1091,33 @@ def rename_kiosk(active_tab):
         flash('Both old and new Kiosk IDs are required.', 'danger')
         return redirect(url_for('admin', tab=active_tab))
 
-    old_json_path = os.path.join(KIOSK_DIR, f"{old_kiosk_id}.json")
-    new_json_path = os.path.join(KIOSK_DIR, f"{new_kiosk_id}.json")
+    old_json_path = kiosk_key(old_kiosk_id)
+    new_json_path = kiosk_key(new_kiosk_id)
     old_asset_path = os.path.join(KIOSK_UPLOAD_FOLDER, old_kiosk_id)
     new_asset_path = os.path.join(KIOSK_UPLOAD_FOLDER, new_kiosk_id)
 
-    if not os.path.exists(old_json_path):
+    if old_kiosk_id not in list_kiosk_ids():
         flash(f"Kiosk '{old_kiosk_id}' not found.", 'danger')
         return redirect(url_for('admin', tab=active_tab))
-    
-    if os.path.exists(new_json_path):
+
+    if new_kiosk_id in list_kiosk_ids():
         flash(f"A kiosk with the ID '{new_kiosk_id}' already exists.", 'danger')
         return redirect(url_for('admin', tab=active_tab))
 
     try:
-        os.rename(old_json_path, new_json_path)
+        kiosk_config = load_data(old_json_path, {})
+        delete_data(old_json_path)
         if os.path.isdir(old_asset_path):
             os.rename(old_asset_path, new_asset_path)
-
-        kiosk_config = load_data(new_json_path, {})
         kiosk_config['name'] = new_kiosk_name
-        
+
         if kiosk_config.get('kiosk_header_image'):
             kiosk_config['kiosk_header_image'] = kiosk_config['kiosk_header_image'].replace(f'/{old_kiosk_id}/', f'/{new_kiosk_id}/')
-        
+
         if kiosk_config.get('kiosk_images'):
             for img in kiosk_config['kiosk_images']:
                 img['url'] = img['url'].replace(f'/{old_kiosk_id}/', f'/{new_kiosk_id}/')
-        
+
         save_data(kiosk_config, new_json_path)
 
         roles = load_data(ROLES_FILE, {})
@@ -947,8 +1134,9 @@ def rename_kiosk(active_tab):
 
     except Exception as e:
         flash(f"An error occurred while renaming: {e}", 'danger')
-        if os.path.exists(new_json_path) and not os.path.exists(old_json_path):
-            os.rename(new_json_path, old_json_path)
+        if new_kiosk_id in list_kiosk_ids() and old_kiosk_id not in list_kiosk_ids():
+            delete_data(new_json_path)
+            save_data(kiosk_config, old_json_path)
         if os.path.isdir(new_asset_path) and not os.path.isdir(old_asset_path):
             os.rename(new_asset_path, old_asset_path)
 
@@ -964,7 +1152,7 @@ def edit_kiosk(active_tab):
 
     kiosk_config = get_kiosk_config(kiosk_id)
     kiosk_config['show_printers'] = 'show_printers' in request.form
-    save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+    save_data(kiosk_config, kiosk_key(kiosk_id))
     
     flash(f"Kiosk '{kiosk_id}' display type updated.", 'success')
     return redirect(url_for('admin', tab=active_tab, kiosk=kiosk_id))
@@ -988,11 +1176,11 @@ if __name__ == '__main__':
     os.makedirs(PRINTER_UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(KIOSK_UPLOAD_FOLDER, exist_ok=True)
 
-    if not os.path.exists(ROLES_FILE):
+    if not data_exists(ROLES_FILE):
         print("First run: Creating default roles.")
         default_roles = {
-            "system": {"permissions": ["*"], "level": 100}, 
-            "super_user": {"permissions": get_available_permissions(), "level": 100}, 
+            "system": {"permissions": ["*"], "level": 100},
+            "super_user": {"permissions": get_available_permissions(), "level": 100},
             "admin": {
                 "permissions": [
                     'view_dashboard', 'set_overrides', 'view_logs',
@@ -1002,20 +1190,21 @@ if __name__ == '__main__':
                     'manage_image_kiosks', 'manage_kiosk_images'
                 ],
                 "level": 50
-            }, 
+            },
             "intern": {"permissions": ["view_dashboard", "set_overrides"], "level": 10}
         }
         save_data(default_roles, ROLES_FILE)
-    if not os.path.exists(USERS_FILE):
+    if not data_exists(USERS_FILE):
         print("First run: Creating default 'system' and 'admin' users.")
-        default_users = {'system': {'password': generate_password_hash('changeme'), 'role': 'system'}, 'admin': {'password': generate_password_hash('changeme'), 'role': 'admin'}}
+        default_users = {
+            'system': {'password': generate_password_hash('changeme'), 'role': 'system'},
+            'admin': {'password': generate_password_hash('changeme'), 'role': 'admin'}
+        }
         save_data(default_users, USERS_FILE)
-    if not os.path.exists(CONFIG_FILE):
+    if not data_exists(CONFIG_FILE):
         print("First run: Creating default configuration.")
         get_full_config()
-    if not os.path.isdir(KIOSK_DIR):
-        os.makedirs(KIOSK_DIR, exist_ok=True)
-    if not os.path.exists(os.path.join(KIOSK_DIR, 'default.json')):
+    if 'default' not in list_kiosk_ids():
         print("First run: Creating default kiosk configuration.")
         get_kiosk_config()
         os.makedirs(os.path.join(KIOSK_UPLOAD_FOLDER, 'default'), exist_ok=True)

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Print Queue</title>
+</head>
+<body>
+    <h1>Print Queue</h1>
+    <table border="1" cellpadding="4">
+        <tr><th>ID</th><th>User</th><th>File</th><th>Printers</th><th>Status</th><th>Action</th></tr>
+        {% for job in queue %}
+        <tr>
+            <td>{{ job['id'] }}</td>
+            <td>{{ job['user'] }}</td>
+            <td>{{ job['filename'] }}</td>
+            <td>{{ ', '.join(job['printers']) }}</td>
+            <td>{{ job['status'] }}</td>
+            <td>
+                {% if job['status'] == 'pending' %}
+                <form method="post" action="{{ url_for('approve_job', job_id=job['id']) }}">
+                    <button type="submit">Approve</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
