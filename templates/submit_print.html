@@ -7,15 +7,40 @@
 <body>
     <h1>Submit G-code</h1>
     <form method="post" enctype="multipart/form-data">
-        <label for="gcode">G-code File:</label>
-        <input type="file" name="gcode" required><br>
-        <label for="printers">Printers:</label>
-        <select name="printers" multiple required>
-            {% for p in printers %}
-            <option value="{{ p['name'] }}">{{ p['name'] }}</option>
+        <div>
+            <label for="gcode">G-code File:</label>
+            <input type="file" name="gcode" required>
+        </div>
+        {% if groups %}
+        <fieldset style="margin-top:1rem;">
+            <legend>Groups</legend>
+            {% for name, members in groups.items() %}
+            <div>
+                <label><input type="checkbox" class="group-box" data-members="{{ ','.join(members) }}"> {{ name }}</label>
+            </div>
             {% endfor %}
-        </select><br>
-        <button type="submit">Submit</button>
+        </fieldset>
+        {% endif %}
+        <fieldset style="margin-top:1rem;">
+            <legend>Printers</legend>
+            {% for p in printers %}
+            <div>
+                <label><input type="checkbox" name="printers" value="{{ p['name'] }}"> {{ p['name'] }}</label>
+            </div>
+            {% endfor %}
+        </fieldset>
+        <button type="submit" style="margin-top:1rem;">Submit</button>
     </form>
+    <script>
+    document.querySelectorAll('.group-box').forEach(box => {
+        box.addEventListener('change', () => {
+            const members = box.dataset.members.split(',');
+            members.forEach(name => {
+                const cb = document.querySelector(`input[name="printers"][value="${name}"]`);
+                if (cb) cb.checked = box.checked;
+            });
+        });
+    });
+    </script>
 </body>
 </html>

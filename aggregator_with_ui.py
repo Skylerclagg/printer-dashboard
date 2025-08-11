@@ -249,7 +249,8 @@ def get_full_config():
         "progress_bar_color": "#007bff", "progress_bar_text_color": "#ffffff",
         "progress_bar_font_size_px": 12, "progress_bar_height_px": 14,
         "progress_bar_text_shadow": True, "status_aliases": {"complete": "Finished", "standby": "Ready"},
-        "refresh_interval_sec": 30
+        "refresh_interval_sec": 30,
+        "printer_groups": {}
     }
     user_config = load_data(CONFIG_FILE, defaults)
     full_config = defaults.copy()
@@ -449,7 +450,8 @@ def root(): return redirect(url_for('dashboard'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if 'username' in session: return redirect(url_for('admin'))
+    if 'username' in session:
+        return redirect(url_for('dashboard'))
     if request.method == 'POST':
         users = load_data(USERS_FILE, {})
         username = request.form.get('username')
@@ -460,7 +462,7 @@ def login():
             session['role'] = user_data.get('role', 'intern')
             logging.info(f"User '{username}' (Role: {session['role']}) logged in.")
             flash('Logged in successfully!', 'success')
-            return redirect(url_for('admin'))
+            return redirect(url_for('dashboard'))
         else:
             logging.warning(f"Failed login for username: '{username}'.")
             flash('Invalid username or password.', 'danger')
@@ -470,7 +472,7 @@ def login():
 def logout():
     session.clear()
     flash('You have been logged out.', 'info')
-    return redirect(url_for('login'))
+    return redirect(url_for('dashboard'))
 
 def get_status_data():
     """Helper function to fetch and cache printer status data."""
@@ -532,6 +534,7 @@ def kiosk_data(kiosk_id):
 @require_permission('submit_print')
 def submit_print():
     printers = load_data(PRINTERS_FILE, [])
+    groups = get_full_config().get('printer_groups', {})
     if request.method == 'POST':
         file = request.files.get('gcode')
         selected_printers = request.form.getlist('printers')
@@ -554,7 +557,7 @@ def submit_print():
                 logging.error(f"Discord webhook failed: {e}")
         flash('Print submitted.' + (' Awaiting approval.' if status == 'pending' else ''), 'success')
         return redirect(url_for('submit_print'))
-    return render_template('submit_print.html', printers=printers)
+    return render_template('submit_print.html', printers=printers, groups=groups)
 
 @app.route('/queue')
 @require_permission('approve_print')
@@ -907,6 +910,15 @@ def update_appearance(active_tab):
     config['font_size_filename_px'] = int(request.form.get('font_size_filename_px', 14))
     config['font_size_status_px'] = int(request.form.get('font_size_status_px', 12))
     config['font_size_details_px'] = int(request.form.get('font_size_details_px', 14))
+    groups_raw = request.form.get('printer_groups', '').strip()
+    if groups_raw:
+        try:
+            config['printer_groups'] = json.loads(groups_raw)
+        except json.JSONDecodeError:
+            flash('Invalid JSON for printer groups.', 'danger')
+            return redirect(url_for('admin', tab=active_tab))
+    else:
+        config['printer_groups'] = {}
     save_data(config, CONFIG_FILE)
     flash('Dashboard appearance and layout updated.', 'success')
     return redirect(url_for('admin', tab=active_tab))
@@ -1184,12 +1196,22 @@ def edit_kiosk(active_tab):
 def dashboard():
     config = get_full_config()
     dashboard_title = config.get('dashboard_title', 'Printer Dashboard')
-    can_submit = False
-    if 'username' in session:
+    username = session.get('username')
+    perms = []
+    if username:
         roles = load_data(ROLES_FILE, {})
         perms = roles.get(session.get('role', ''), {}).get('permissions', [])
-        can_submit = 'submit_print' in perms or '*' in perms
-    return render_template('dashboard.html', dashboard_title=dashboard_title, can_submit=can_submit)
+    can_submit = 'submit_print' in perms or '*' in perms
+    can_admin = 'view_dashboard' in perms or '*' in perms
+    can_approve = 'approve_print' in perms or '*' in perms
+    return render_template(
+        'dashboard.html',
+        dashboard_title=dashboard_title,
+        username=username,
+        can_submit=can_submit,
+        can_admin=can_admin,
+        can_approve=can_approve,
+    )
 
 @app.route('/kiosk')
 @app.route('/kiosk/<kiosk_id>')
@@ -1218,6 +1240,7 @@ if __name__ == '__main__':
                 ],
                 "level": 50
             },
+            "member": {"permissions": ["submit_print"], "level": 20},
             "intern": {"permissions": ["view_dashboard", "set_overrides"], "level": 10}
         }
         save_data(default_roles, ROLES_FILE)

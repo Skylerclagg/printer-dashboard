@@ -26,10 +26,17 @@
     </style>
 </head>
 <body>
+    <div style="text-align:center; margin-bottom:1rem;">
+        {% if username %}
+            Logged in as <strong>{{ username }}</strong> | <a href="{{ url_for('logout') }}">Logout</a>
+            {% if can_submit %} | <a href="{{ url_for('submit_print') }}">Submit a Print</a>{% endif %}
+            {% if can_approve %} | <a href="{{ url_for('view_queue') }}">Review Queue</a>{% endif %}
+            {% if can_admin %} | <a href="{{ url_for('admin') }}">Admin Panel</a>{% endif %}
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+        {% endif %}
+    </div>
     <h1>{{ dashboard_title }}</h1>
-    {% if can_submit %}
-    <p style="text-align:center;"><a href="{{ url_for('submit_print') }}">Submit a Print</a></p>
-    {% endif %}
     <div id="dash"><p>Loading printer statuses...</p></div>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
