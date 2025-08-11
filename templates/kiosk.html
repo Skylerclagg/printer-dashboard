@@ -211,19 +211,23 @@
             if (currentSlideIndex >= slides.length) {
                 currentSlideIndex = 0;
             }
+
+            // Ensure a slide is visible immediately after rebuilding
+            showCurrentSlide();
+
+            // Restart the slideshow timer using the current slide's timing
+            cycleSlide();
         }
-        
-        function cycleSlide() {
-            clearTimeout(slideTimeout);
+
+        function showCurrentSlide() {
             if (slides.length === 0) return;
 
             document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
 
-            const current = slides[currentSlideIndex];
+            let current = slides[currentSlideIndex];
             if (!current) {
                 currentSlideIndex = 0;
-                cycleSlide();
-                return;
+                current = slides[0];
             }
 
             kioskHeader.style.display = current.isImage ? 'none' : 'flex';
@@ -237,13 +241,21 @@
             }
 
             slideEl.classList.add('active');
+        }
+        
+        function cycleSlide() {
+            clearTimeout(slideTimeout);
+            if (slides.length === 0) return;
+
+            showCurrentSlide();
 
             if (slides.length <= 1) return;
 
+            const current = slides[currentSlideIndex];
             const delaySec = current.isImage
                 ? (current.time || globalKioskConfig.kiosk_image_page_time || 5)
                 : (globalKioskConfig.kiosk_printer_page_time || 10);
-            
+
             currentSlideIndex = (currentSlideIndex + 1) % slides.length;
             slideTimeout = setTimeout(cycleSlide, delaySec * 1000);
         }
@@ -253,7 +265,6 @@
                 .done(data => {
                     const refreshInterval = (data.config.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    cycleSlide();
                     
                     setInterval(() => {
                         $.getJSON(`/status?kiosk=${kioskId}`).done(buildAndRenderSlides);

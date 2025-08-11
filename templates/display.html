@@ -45,20 +45,18 @@
             if (currentSlideIndex >= slides.length) {
                 currentSlideIndex = 0;
             }
+
+            // Ensure the currently selected slide remains visible
+            showCurrentSlide();
+
+            // Restart the slideshow timer using the current slide's delay
+            cycleSlide();
         }
-        
-        function cycleSlide() {
-            clearTimeout(slideTimeout);
+
+        function showCurrentSlide() {
             if (slides.length === 0) return;
 
             document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
-
-            const current = slides[currentSlideIndex];
-            if (!current) {
-                currentSlideIndex = 0;
-                cycleSlide();
-                return;
-            }
 
             let slideEl = document.getElementById('slide-' + currentSlideIndex);
             if (!slideEl) {
@@ -69,11 +67,19 @@
             }
 
             slideEl.classList.add('active');
+        }
+
+        function cycleSlide() {
+            clearTimeout(slideTimeout);
+            if (slides.length === 0) return;
+
+            showCurrentSlide();
 
             if (slides.length <= 1) return;
 
+            const current = slides[currentSlideIndex];
             const delaySec = current.time || 5;
-            
+
             currentSlideIndex = (currentSlideIndex + 1) % slides.length;
             slideTimeout = setTimeout(cycleSlide, delaySec * 1000);
         }
@@ -83,7 +89,6 @@
                 .done(data => {
                     const refreshInterval = (data.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    cycleSlide(); // Start the slideshow
                     
                     // Set up a separate timer to refresh the data in the background
                     setInterval(() => {
