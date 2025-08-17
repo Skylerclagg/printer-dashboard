@@ -245,6 +245,11 @@
                             <input type="checkbox" name="progress_bar_text_shadow" value="true" {% if config.progress_bar_text_shadow %}checked{% endif %}>
                         </div>
                     </div>
+                    <div style="margin-top: 1.5rem;">
+                        <label>Printer Groups (JSON)</label>
+                        <textarea name="printer_groups" rows="4">{{ config.printer_groups | tojson }}</textarea>
+                        <small>Example: {"Group A": ["Printer1", "Printer2"]}</small>
+                    </div>
                     <button type="submit" style="margin-top: 1rem;">Save Layout & Appearance</button>
                 </form>
             </div>
@@ -338,13 +343,13 @@
                     {% for username, data in users.items() %}
                     <tr><td>{{ username }}</td><td>{{ data.role }}</td>
                         <td>
-                            {% if roles[data.role].level < roles[session.role].level %}
+                            {% if roles[data.role].level < roles[session.role].level or session.role == 'system' %}
                             {% if 'change_user_role' in user_permissions %}
                             <form action="{{ url_for('manage_users') }}" method="POST" style="display:inline-flex;">
                                 <input type="hidden" name="active_tab" value="user-role">
                                 <input type="hidden" name="action" value="change_role"><input type="hidden" name="username" value="{{ username }}">
                                 <select name="role" onchange="this.form.submit()">
-                                    {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level %}
+                                    {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level or session.role == 'system' %}
                                     <option value="{{ role_name }}" {% if data.role == role_name %}selected{% endif %}>{{ role_name }}</option>
                                     {% endif %}{% endfor %}
                                 </select>
@@ -375,7 +380,7 @@
                         <div><label>Password</label><input type="password" name="password" required></div>
                         <div><label>Role</label>
                             <select name="role">
-                                {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level %}
+                                {% for role_name, role_data in roles.items() %}{% if role_data.level < roles[session.role].level or session.role == 'system' %}
                                 <option value="{{ role_name }}">{{ role_name }}</option>
                                 {% endif %}{% endfor %}
                             </select>
@@ -394,7 +399,7 @@
                     <div class="form-grid">
                         <div><label>Username</label>
                             <select name="username">
-                                {% for u, d in users.items() %}{% if roles[d.role].level < roles[session.role].level or u == session.username %}
+                                {% for u, d in users.items() %}{% if roles[d.role].level < roles[session.role].level or u == session.username or session.role == 'system' %}
                                 <option value="{{ u }}">{{ u }}</option>
                                 {% endif %}{% endfor %}
                             </select>
@@ -549,6 +554,14 @@
                         <div class="form-grid">
                             <div><label>Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}"></div>
                             {% if kconf.show_printers %}
+                            <div>
+                                <label>Printers to Display</label>
+                                <select name="kiosk_printers" multiple size="5">
+                                    {% for p in printers %}
+                                    <option value="{{ p.name }}" {% if p.name in kconf.kiosk_printers %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             <div><label>Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" min="1"></div>
                             <div><label>Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" min="1"></div>
                             <div><label>Image Frequency (after # printer pages)</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" min="1"></div>

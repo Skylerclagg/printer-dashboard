@@ -109,12 +109,14 @@
             }
             
             let errorHtml = originalState === 'Config Error' ? `<div class="error-message">Error: ${printerData.error}</div>` : '';
+            const queueLength = printerData.queue_length || 0;
 
             return `
                 <div class="card" data-printer-name="${printerName}">
                     <img src="${imgSrc}" class="card-img" alt="${printerName}" onerror="this.onerror=null;this.src='https://via.placeholder.com/400x200/dee2e6/6c757d?text=Image+Error';">
                     <div class="card-content">
                         <h4 style="font-size:${config.font_size_printer_name_px}px;">${printerName}</h4>
+                        <div class="queue-count" style="font-size:${config.font_size_details_px}px;">Queue: ${queueLength}</div>
                         ${filenameHtml}
                         <span class="status" style="background-color:${statusColor}; font-size:${config.font_size_status_px}px;">${state}</span>
                         ${errorHtml}
