@@ -300,7 +300,8 @@ def fetch_prusalink_data(p):
         return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
     try:
         headers = {'X-Api-Key': p['api_key']}
-        resp = requests.get(f"http://{p['ip']}/api/v1/status", headers=headers, timeout=5)
+        base_url = f"http://{p['ip']}/api/v1"
+        resp = requests.get(f"{base_url}/status", headers=headers, timeout=5)
         resp.raise_for_status()
         status = resp.json()
         printer = status.get('printer', {}) or {}
@@ -309,10 +310,31 @@ def fetch_prusalink_data(p):
         file_obj = job_status.get('file', {}) if isinstance(job_status, dict) else {}
         filename = (file_obj.get('display_name') or file_obj.get('name') or
                     job_status.get('file_name') or job_status.get('filename') or file_obj.get('path'))
+
+        # If no filename was returned in the status response, try the dedicated job endpoint
+        if not filename:
+            try:
+                job_resp = requests.get(f"{base_url}/job", headers=headers, timeout=5)
+                job_resp.raise_for_status()
+                job_data = job_resp.json()
+                file_obj2 = job_data.get('file', {}) if isinstance(job_data, dict) else {}
+                filename = (file_obj2.get('display_name') or file_obj2.get('name') or
+                            job_data.get('file_name') or job_data.get('filename') or file_obj2.get('path'))
+            except Exception as e:
+                logging.debug(f"PrusaLink job fetch failed for '{p.get('name')}': {e}")
+
+        prog = job_status.get('progress')
+        if prog is not None:
+            try:
+                prog = float(prog)
+                prog = round(prog * 100, 1) if prog <= 1 else round(prog, 1)
+            except (ValueError, TypeError):
+                prog = None
+
         return {
             'state': state,
             'filename': filename,
-            'progress': int(job_status.get('progress')) if job_status.get('progress') is not None else None,
+            'progress': prog,
             'bed_temp': round(printer.get('temp_bed'), 1) if printer.get('temp_bed') is not None else None,
             'nozzle_temp': round(printer.get('temp_nozzle'), 1) if printer.get('temp_nozzle') is not None else None,
             'time_elapsed': int(job_status.get('time_printing')) if job_status.get('time_printing') is not None else None,
