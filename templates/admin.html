@@ -204,7 +204,7 @@
         </button>
       </li>
       {% endif %}
-      {% if 'add_user' in user_permissions %}
+      {% if can_manage_users or can_manage_roles %}
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users-tab-pane" type="button" role="tab">Users / Roles</button>
       </li>
@@ -712,19 +712,24 @@
         <div class="card">
           <div class="card-body">
             <ul class="nav nav-pills mb-3" id="userRoleTab" role="tablist">
+              {% if can_manage_users %}
               <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="manage-users-subtab" data-bs-toggle="tab" data-bs-target="#manage-users-pane" type="button">Users</button>
+                <button class="nav-link {% if can_manage_users %}active{% endif %}" id="manage-users-subtab" data-bs-toggle="tab" data-bs-target="#manage-users-pane" type="button">Users</button>
               </li>
+              {% endif %}
+              {% if can_manage_roles %}
               <li class="nav-item" role="presentation">
-                <button class="nav-link" id="manage-roles-subtab" data-bs-toggle="tab" data-bs-target="#manage-roles-pane" type="button">Roles</button>
+                <button class="nav-link {% if not can_manage_users %}active{% endif %}" id="manage-roles-subtab" data-bs-toggle="tab" data-bs-target="#manage-roles-pane" type="button">Roles</button>
               </li>
+              {% endif %}
             </ul>
 
             <div class="tab-content pt-3">
+              {% if can_manage_users %}
               <!-- Users -->
-              <div class="tab-pane fade show active" id="manage-users-pane">
+              <div class="tab-pane fade {% if can_manage_users %}show active{% endif %}" id="manage-users-pane">
                 <div class="row">
-                  <div class="col-lg-7">
+                  <div class="{{ 'col-lg-7' if 'add_user' in user_permissions else 'col-12' }}">
                     <div class="card mb-4">
                       <div class="card-body">
                         <h5 class="card-title">User Management</h5>
@@ -740,30 +745,36 @@
                                 <td>{{ data.role }}</td>
                                 <td class="d-flex gap-2 flex-wrap">
                                   {% if session.role == 'system' or (roles.get(data.role, {}).get('level', 0) < roles.get(session.role, {}).get('level', 0)) %}
-                                  <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
-                                          data-bs-toggle="modal" data-bs-target="#editUserModal"
-                                          data-user-username="{{ username }}"
-                                          data-user-name="{{ data.get('name','') }}"
-                                          data-user-email="{{ data.get('email','') }}"
-                                          data-user-role="{{ data.role }}">
-                                    Edit
-                                  </button>
+                                    {% if 'edit_user' in user_permissions %}
+                                    <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
+                                            data-bs-toggle="modal" data-bs-target="#editUserModal"
+                                            data-user-username="{{ username }}"
+                                            data-user-name="{{ data.get('name','') }}"
+                                            data-user-email="{{ data.get('email','') }}"
+                                            data-user-role="{{ data.role }}">
+                                      Edit
+                                    </button>
+                                    {% endif %}
 
-                                  <button type="button" class="btn btn-sm btn-warning change-password-btn"
-                                          data-bs-toggle="modal" data-bs-target="#changePasswordModal"
-                                          data-user-username="{{ username }}"
-                                          data-user-name="{{ data.get('name','') }}"
-                                          data-user-email="{{ data.get('email','') }}"
-                                          data-user-role="{{ data.role }}">
-                                    Change Password
-                                  </button>
+                                    {% if 'change_user_password' in user_permissions %}
+                                    <button type="button" class="btn btn-sm btn-warning change-password-btn"
+                                            data-bs-toggle="modal" data-bs-target="#changePasswordModal"
+                                            data-user-username="{{ username }}"
+                                            data-user-name="{{ data.get('name','') }}"
+                                            data-user-email="{{ data.get('email','') }}"
+                                            data-user-role="{{ data.role }}">
+                                      Change Password
+                                    </button>
+                                    {% endif %}
 
-                                  <form action="{{ url_for('manage_users') }}" method="POST" onsubmit="return confirm('Delete this user?');" class="d-inline">
-                                    <input type="hidden" name="active_tab" value="user-role">
-                                    <input type="hidden" name="action" value="delete_user">
-                                    <input type="hidden" name="username" value="{{ username }}">
-                                    <button class="btn btn-sm btn-danger" type="submit">Delete</button>
-                                  </form>
+                                    {% if 'delete_user' in user_permissions %}
+                                    <form action="{{ url_for('manage_users') }}" method="POST" onsubmit="return confirm('Delete this user?');" class="d-inline">
+                                      <input type="hidden" name="active_tab" value="user-role">
+                                      <input type="hidden" name="action" value="delete_user">
+                                      <input type="hidden" name="username" value="{{ username }}">
+                                      <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                                    </form>
+                                    {% endif %}
                                   {% endif %}
                                 </td>
                               </tr>
@@ -775,6 +786,7 @@
                     </div>
                   </div>
 
+                  {% if 'add_user' in user_permissions %}
                   <div class="col-lg-5">
                     <div class="card mb-4">
                       <div class="card-body">
@@ -813,12 +825,15 @@
                       </div>
                     </div>
                   </div>
+                  {% endif %}
 
                 </div>
               </div>
+              {% endif %}
 
+              {% if can_manage_roles %}
               <!-- Roles -->
-              <div class="tab-pane fade" id="manage-roles-pane">
+              <div class="tab-pane fade {% if not can_manage_users %}show active{% endif %}" id="manage-roles-pane">
                 <div class="card mb-4">
                   <div class="card-body">
                     <h5 class="card-title">Role Management</h5>
@@ -837,28 +852,30 @@
                             </td>
                             <td>
                               {% if role_name != 'system' %}
-                              <button type="button" class="btn btn-sm btn-secondary edit-role-btn"
-                                      data-bs-toggle="modal" data-bs-target="#editRoleModal"
-                                      data-role-name="{{ role_name }}"
-                                      data-role-level="{{ role_data.level }}"
-                                      data-role-perms='{{ role_data.permissions|tojson }}'>
-                                Edit
-                              </button>
+                                {% if 'edit_role' in user_permissions %}
+                                <button type="button" class="btn btn-sm btn-secondary edit-role-btn"
+                                        data-bs-toggle="modal" data-bs-target="#editRoleModal"
+                                        data-role-name="{{ role_name }}"
+                                        data-role-level="{{ role_data.level }}"
+                                        data-role-perms='{{ role_data.permissions|tojson }}'>
+                                  Edit
+                                </button>
+                                {% endif %}
 
-                              {% if role_name not in ['super_user','admin','intern'] %}
-                              <form action="{{ url_for('manage_roles') }}" method="POST" onsubmit="return confirm('Delete this role? This cannot be undone.');" class="d-inline">
-                                <input type="hidden" name="active_tab" value="user-role">
-                                <input type="hidden" name="action" value="delete_role">
-                                <input type="hidden" name="role_name" value="{{ role_name }}">
-                                <button class="btn btn-sm btn-danger" type="submit">Delete</button>
-                              </form>
-                              {% endif %}
+                                {% if role_name not in ['super_user','admin','intern'] and 'delete_role' in user_permissions %}
+                                <form action="{{ url_for('manage_roles') }}" method="POST" onsubmit="return confirm('Delete this role? This cannot be undone.');" class="d-inline">
+                                  <input type="hidden" name="active_tab" value="user-role">
+                                  <input type="hidden" name="action" value="delete_role">
+                                  <input type="hidden" name="role_name" value="{{ role_name }}">
+                                  <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                                </form>
+                                {% endif %}
 
-                              {% if session.get('original_role') in ['system','super_user'] or session.get('role') in ['system','super_user'] %}
-                              <form action="{{ url_for('login_as', role_name=role_name) }}" method="POST" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-info">Login As</button>
-                              </form>
-                              {% endif %}
+                                {% if session.get('original_role') in ['system','super_user'] or session.get('role') in ['system','super_user'] %}
+                                <form action="{{ url_for('login_as', role_name=role_name) }}" method="POST" class="d-inline">
+                                  <button type="submit" class="btn btn-sm btn-info">Login As</button>
+                                </form>
+                                {% endif %}
                               {% endif %}
                             </td>
                           </tr>
@@ -869,6 +886,7 @@
                   </div>
                 </div>
 
+                {% if 'add_role' in user_permissions %}
                 <div class="card">
                   <div class="card-body">
                     <h5 class="card-title">Create New Role</h5>
@@ -896,8 +914,10 @@
                     </form>
                   </div>
                 </div>
+                {% endif %}
 
               </div><!-- /roles pane -->
+              {% endif %}
             </div>
           </div>
         </div>

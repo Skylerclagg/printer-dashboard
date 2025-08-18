@@ -566,6 +566,13 @@ def admin():
     if '*' in user_permissions:
         user_permissions = get_available_permissions()
 
+    can_manage_users = any(p in user_permissions for p in [
+        'add_user', 'edit_user', 'delete_user', 'change_user_password', 'change_user_role'
+    ])
+    can_manage_roles = any(p in user_permissions for p in [
+        'add_role', 'edit_role', 'delete_role'
+    ])
+
     # live statuses + all statuses for config UI
     live_statuses = fetch_all(printers)
 
@@ -641,6 +648,8 @@ def admin():
         permission_labels=permission_labels,
         log_content=log_content,
         user_permissions=user_permissions,
+        can_manage_users=can_manage_users,
+        can_manage_roles=can_manage_roles,
         active_tab=active_tab, selected_kiosk=selected_kiosk,
         pending_jobs=pending_jobs, live_statuses=live_statuses
     )
