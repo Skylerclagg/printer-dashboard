@@ -500,14 +500,29 @@ def status_json():
         config = get_full_config()
         overrides = load_data(OVERRIDES_FILE, {})
         aliases = config.get('status_aliases', {})
+
+        # Determine if current user has permission to view file names
+        roles = load_data(ROLES_FILE, {})
+        user_permissions = []
+        if 'username' in session:
+            user_role = session.get('role', '')
+            user_permissions = roles.get(user_role, {}).get('permissions', [])
+            if '*' in user_permissions:
+                user_permissions = get_available_permissions()
+        can_view_filenames = 'view_file_names' in user_permissions
+
         processed_data = {}
         for name, data in status_data.items():
-            processed_data[name] = data.copy()
+            processed = data.copy()
             if name in overrides and overrides[name].get('status'):
-                processed_data[name]['state'] = overrides[name]['status']
-            original_state = processed_data[name].get('state')
+                processed['state'] = overrides[name]['status']
+            original_state = processed.get('state')
             if original_state in aliases and aliases[original_state]:
-                processed_data[name]['state'] = aliases[original_state]
+                processed['state'] = aliases[original_state]
+            if not can_view_filenames or not processed.get('show_filename', True):
+                processed['filename'] = None
+            processed_data[name] = processed
+
         return jsonify({**processed_data, 'config': config})
     except Exception as e:
         logging.exception("status_json failed")
