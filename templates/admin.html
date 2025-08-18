@@ -204,7 +204,7 @@
         </button>
       </li>
       {% endif %}
-      {% if 'add_user' in user_permissions %}
+      {% if can_manage_users or can_manage_roles %}
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users-tab-pane" type="button" role="tab">Users / Roles</button>
       </li>
@@ -254,7 +254,7 @@
                           {% for printer in printers %}
                           <tr>
                             <td>{{ printer.name }}</td>
-                            <td>{{ printer.type }}</td>
+                            <td>{{ printer.type|capitalize }}</td>
                             <td>
                               {% if printer.type == 'prusa' %}{{ printer.ip }} / {{ printer.api_key[:4] }}...{% endif %}
                               {% if printer.type == 'klipper' %}{{ printer.url }}{% endif %}
@@ -398,6 +398,17 @@
                 <div class="col-md-4">
                   <label class="form-label">Upload Title Image</label>
                   <input type="file" name="dashboard_title_image_file" class="form-control" accept="image/*">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Title Image Height (px)</label>
+                  <input type="number" name="dashboard_title_image_height" value="{{ config.dashboard_title_image_height }}" class="form-control" min="10">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Title Image Position</label>
+                  <select name="dashboard_title_image_position" class="form-select">
+                    <option value="left" {% if config.dashboard_title_image_position != 'center' %}selected{% endif %}>Left</option>
+                    <option value="center" {% if config.dashboard_title_image_position == 'center' %}selected{% endif %}>Center</option>
+                  </select>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Top Bar Color</label>
@@ -685,19 +696,19 @@
             <h5 class="card-title">Self Sign-up Settings</h5>
             <form action="{{ url_for('manage_config') }}" method="POST" class="row g-3 align-items-end">
               <input type="hidden" name="active_tab" value="user-role">
-              <input type="hidden" name="action" value="update_auth">
+              <input type="hidden" name="action" value="update_signup_settings">
               <div class="col-md-4">
                 <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="allow_signup" name="allow_self_signup" {% if config.allow_self_signup %}checked{% endif %}>
-                  <label class="form-check-label" for="allow_signup">Allow Self Sign-up</label>
+                  <input class="form-check-input" type="checkbox" id="enable_signup" name="enable_self_signup" {% if config.enable_self_signup %}checked{% endif %}>
+                  <label class="form-check-label" for="enable_signup">Allow Self Sign-up</label>
                 </div>
               </div>
               <div class="col-md-4">
-                <label class="form-label" for="default_role">Default Role for New Accounts</label>
-                <select class="form-select" id="default_role" name="default_role">
+                <label class="form-label" for="default_signup_role">Default Role for New Accounts</label>
+                <select class="form-select" id="default_signup_role" name="default_signup_role">
                   {% for role_name, role_data in roles.items() %}
-                    {% if roles[session.role].level > role_data.level %}
-                      <option value="{{ role_name }}" {% if config.default_role == role_name %}selected{% endif %}>{{ role_name }}</option>
+                    {% if roles.get(session.role, {}).get('level', 0)|int > role_data.level|int %}
+                      <option value="{{ role_name }}" {% if config.default_signup_role == role_name %}selected{% endif %}>{{ role_name }}</option>
                     {% endif %}
                   {% endfor %}
                 </select>
@@ -712,19 +723,24 @@
         <div class="card">
           <div class="card-body">
             <ul class="nav nav-pills mb-3" id="userRoleTab" role="tablist">
+              {% if can_manage_users %}
               <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="manage-users-subtab" data-bs-toggle="tab" data-bs-target="#manage-users-pane" type="button">Users</button>
+                <button class="nav-link {% if can_manage_users %}active{% endif %}" id="manage-users-subtab" data-bs-toggle="tab" data-bs-target="#manage-users-pane" type="button">Users</button>
               </li>
+              {% endif %}
+              {% if can_manage_roles %}
               <li class="nav-item" role="presentation">
-                <button class="nav-link" id="manage-roles-subtab" data-bs-toggle="tab" data-bs-target="#manage-roles-pane" type="button">Roles</button>
+                <button class="nav-link {% if not can_manage_users %}active{% endif %}" id="manage-roles-subtab" data-bs-toggle="tab" data-bs-target="#manage-roles-pane" type="button">Roles</button>
               </li>
+              {% endif %}
             </ul>
 
             <div class="tab-content pt-3">
+              {% if can_manage_users %}
               <!-- Users -->
-              <div class="tab-pane fade show active" id="manage-users-pane">
+              <div class="tab-pane fade {% if can_manage_users %}show active{% endif %}" id="manage-users-pane">
                 <div class="row">
-                  <div class="col-lg-7">
+                  <div class="{{ 'col-lg-7' if 'add_user' in user_permissions else 'col-12' }}">
                     <div class="card mb-4">
                       <div class="card-body">
                         <h5 class="card-title">User Management</h5>
@@ -739,31 +755,37 @@
                                 <td>{{ data.get('email','') }}</td>
                                 <td>{{ data.role }}</td>
                                 <td class="d-flex gap-2 flex-wrap">
-                                  {% if session.role == 'system' or (roles[data.role].level < roles[session.role].level) %}
-                                  <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
-                                          data-bs-toggle="modal" data-bs-target="#editUserModal"
-                                          data-user-username="{{ username }}"
-                                          data-user-name="{{ data.get('name','') }}"
-                                          data-user-email="{{ data.get('email','') }}"
-                                          data-user-role="{{ data.role }}">
-                                    Edit
-                                  </button>
+                                  {% if session.role == 'system' or (roles.get(data.role, {}).get('level', 0)|int < roles.get(session.role, {}).get('level', 0)|int) %}
+                                    {% if 'edit_user' in user_permissions %}
+                                    <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
+                                            data-bs-toggle="modal" data-bs-target="#editUserModal"
+                                            data-user-username="{{ username }}"
+                                            data-user-name="{{ data.get('name','') }}"
+                                            data-user-email="{{ data.get('email','') }}"
+                                            data-user-role="{{ data.role }}">
+                                      Edit
+                                    </button>
+                                    {% endif %}
 
-                                  <button type="button" class="btn btn-sm btn-warning change-password-btn"
-                                          data-bs-toggle="modal" data-bs-target="#changePasswordModal"
-                                          data-user-username="{{ username }}"
-                                          data-user-name="{{ data.get('name','') }}"
-                                          data-user-email="{{ data.get('email','') }}"
-                                          data-user-role="{{ data.role }}">
-                                    Change Password
-                                  </button>
+                                    {% if 'change_user_password' in user_permissions %}
+                                    <button type="button" class="btn btn-sm btn-warning change-password-btn"
+                                            data-bs-toggle="modal" data-bs-target="#changePasswordModal"
+                                            data-user-username="{{ username }}"
+                                            data-user-name="{{ data.get('name','') }}"
+                                            data-user-email="{{ data.get('email','') }}"
+                                            data-user-role="{{ data.role }}">
+                                      Change Password
+                                    </button>
+                                    {% endif %}
 
-                                  <form action="{{ url_for('manage_users') }}" method="POST" onsubmit="return confirm('Delete this user?');" class="d-inline">
-                                    <input type="hidden" name="active_tab" value="user-role">
-                                    <input type="hidden" name="action" value="delete_user">
-                                    <input type="hidden" name="username" value="{{ username }}">
-                                    <button class="btn btn-sm btn-danger" type="submit">Delete</button>
-                                  </form>
+                                    {% if 'delete_user' in user_permissions %}
+                                    <form action="{{ url_for('manage_users') }}" method="POST" onsubmit="return confirm('Delete this user?');" class="d-inline">
+                                      <input type="hidden" name="active_tab" value="user-role">
+                                      <input type="hidden" name="action" value="delete_user">
+                                      <input type="hidden" name="username" value="{{ username }}">
+                                      <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                                    </form>
+                                    {% endif %}
                                   {% endif %}
                                 </td>
                               </tr>
@@ -775,6 +797,7 @@
                     </div>
                   </div>
 
+                  {% if 'add_user' in user_permissions %}
                   <div class="col-lg-5">
                     <div class="card mb-4">
                       <div class="card-body">
@@ -802,7 +825,7 @@
                             <label class="form-label">Role</label>
                             <select name="role" class="form-select">
                               {% for role_name, role_data in roles.items() %}
-                                {% if role_data.level < roles[session.role].level %}
+                                {% if role_data.level|int < roles.get(session.role, {}).get('level', 0)|int %}
                                   <option value="{{ role_name }}">{{ role_name }}</option>
                                 {% endif %}
                               {% endfor %}
@@ -813,12 +836,15 @@
                       </div>
                     </div>
                   </div>
+                  {% endif %}
 
                 </div>
               </div>
+              {% endif %}
 
+              {% if can_manage_roles %}
               <!-- Roles -->
-              <div class="tab-pane fade" id="manage-roles-pane">
+              <div class="tab-pane fade {% if not can_manage_users %}show active{% endif %}" id="manage-roles-pane">
                 <div class="card mb-4">
                   <div class="card-body">
                     <h5 class="card-title">Role Management</h5>
@@ -837,28 +863,30 @@
                             </td>
                             <td>
                               {% if role_name != 'system' %}
-                              <button type="button" class="btn btn-sm btn-secondary edit-role-btn"
-                                      data-bs-toggle="modal" data-bs-target="#editRoleModal"
-                                      data-role-name="{{ role_name }}"
-                                      data-role-level="{{ role_data.level }}"
-                                      data-role-perms='{{ role_data.permissions|tojson }}'>
-                                Edit
-                              </button>
+                                {% if 'edit_role' in user_permissions %}
+                                <button type="button" class="btn btn-sm btn-secondary edit-role-btn"
+                                        data-bs-toggle="modal" data-bs-target="#editRoleModal"
+                                        data-role-name="{{ role_name }}"
+                                        data-role-level="{{ role_data.level }}"
+                                        data-role-perms='{{ role_data.permissions|tojson }}'>
+                                  Edit
+                                </button>
+                                {% endif %}
 
-                              {% if role_name not in ['super_user','admin','intern'] %}
-                              <form action="{{ url_for('manage_roles') }}" method="POST" onsubmit="return confirm('Delete this role? This cannot be undone.');" class="d-inline">
-                                <input type="hidden" name="active_tab" value="user-role">
-                                <input type="hidden" name="action" value="delete_role">
-                                <input type="hidden" name="role_name" value="{{ role_name }}">
-                                <button class="btn btn-sm btn-danger" type="submit">Delete</button>
-                              </form>
-                              {% endif %}
+                                {% if role_name not in ['super_user','admin','intern'] and 'delete_role' in user_permissions %}
+                                <form action="{{ url_for('manage_roles') }}" method="POST" onsubmit="return confirm('Delete this role? This cannot be undone.');" class="d-inline">
+                                  <input type="hidden" name="active_tab" value="user-role">
+                                  <input type="hidden" name="action" value="delete_role">
+                                  <input type="hidden" name="role_name" value="{{ role_name }}">
+                                  <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+                                </form>
+                                {% endif %}
 
-                              {% if session.get('original_role') in ['system','super_user'] or session.get('role') in ['system','super_user'] %}
-                              <form action="{{ url_for('login_as', role_name=role_name) }}" method="POST" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-info">Login As</button>
-                              </form>
-                              {% endif %}
+                                {% if session.get('original_role') in ['system','super_user'] or session.get('role') in ['system','super_user'] %}
+                                <form action="{{ url_for('login_as', role_name=role_name) }}" method="POST" class="d-inline">
+                                  <button type="submit" class="btn btn-sm btn-info">Login As</button>
+                                </form>
+                                {% endif %}
                               {% endif %}
                             </td>
                           </tr>
@@ -869,6 +897,7 @@
                   </div>
                 </div>
 
+                {% if 'add_role' in user_permissions %}
                 <div class="card">
                   <div class="card-body">
                     <h5 class="card-title">Create New Role</h5>
@@ -884,10 +913,14 @@
                         <input type="number" name="level" min="1" max="99" value="10" class="form-control" required>
                       </div>
                       <h6>Permissions:</h6>
-                      <div class="permissions-grid">
+                      <div class="mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary me-2" id="add-role-add-all">Add All</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="add-role-remove-all">Remove All</button>
+                      </div>
+                      <div class="permissions-grid" id="add-role-permissions">
                         {% for perm in available_permissions %}
                         <div class="form-check">
-                          <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="perm_{{ perm }}">
+                          <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="perm_{{ perm }}" {% if perm not in user_permissions %}disabled{% endif %}>
                           <label class="form-check-label" for="perm_{{ perm }}">{{ perm_names.get(perm, perm) }}</label>
                         </div>
                         {% endfor %}
@@ -896,8 +929,10 @@
                     </form>
                   </div>
                 </div>
+                {% endif %}
 
               </div><!-- /roles pane -->
+              {% endif %}
             </div>
           </div>
         </div>
@@ -1095,7 +1130,7 @@
                     <option value="{{ role_name }}">{{ role_name }}</option>
                   {% elif session.role == 'super_user' and role_name != 'system' %}
                     <option value="{{ role_name }}">{{ role_name }}</option>
-                  {% elif role_data.level < roles[session.role].level %}
+                  {% elif role_data.level|int < roles.get(session.role, {}).get('level', 0)|int %}
                     <option value="{{ role_name }}">{{ role_name }}</option>
                   {% endif %}
                 {% endfor %}
@@ -1244,10 +1279,14 @@
               </div>
               <div class="col-md-9">
                 <label class="form-label d-block">Permissions</label>
+                <div class="mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary me-2" id="edit-role-add-all">Add All</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="edit-role-remove-all">Remove All</button>
+                </div>
                 <div class="permissions-grid" id="edit-role-permissions">
                   {% for perm in available_permissions %}
                   <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="edit_perm_{{ perm }}">
+                    <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="edit_perm_{{ perm }}" {% if perm not in user_permissions %}disabled{% endif %}>
                     <label class="form-check-label" for="edit_perm_{{ perm }}">{{ perm_names.get(perm, perm) }}</label>
                   </div>
                   {% endfor %}
@@ -1446,6 +1485,48 @@
             }
           });
         }
+      }
+
+      /* ====== Edit Role Modal ====== */
+      const editRoleModal = document.getElementById('editRoleModal');
+      if (editRoleModal){
+        editRoleModal.addEventListener('show.bs.modal', function(event){
+          const b = event.relatedTarget;
+          const name = b.dataset.roleName || '';
+          const level = b.dataset.roleLevel || '';
+          const perms = JSON.parse(b.dataset.rolePerms || '[]');
+
+          editRoleModal.querySelector('#editRoleModalLabel').textContent = `Edit Role: ${name}`;
+          editRoleModal.querySelector('#edit-role-name').value = name;
+          editRoleModal.querySelector('#edit-role-level').value = level;
+
+          const permContainer = document.getElementById('edit-role-permissions');
+          if (permContainer){
+            permContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+              cb.checked = perms.includes(cb.value);
+            });
+          }
+        });
+      }
+
+      function togglePerms(container, checked){
+        container.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => { cb.checked = checked; });
+      }
+
+      const addRolePerms = document.getElementById('add-role-permissions');
+      const addRoleAddAll = document.getElementById('add-role-add-all');
+      const addRoleRemoveAll = document.getElementById('add-role-remove-all');
+      if (addRolePerms && addRoleAddAll && addRoleRemoveAll){
+        addRoleAddAll.addEventListener('click', () => togglePerms(addRolePerms, true));
+        addRoleRemoveAll.addEventListener('click', () => togglePerms(addRolePerms, false));
+      }
+
+      const editRolePerms = document.getElementById('edit-role-permissions');
+      const editRoleAddAll = document.getElementById('edit-role-add-all');
+      const editRoleRemoveAll = document.getElementById('edit-role-remove-all');
+      if (editRolePerms && editRoleAddAll && editRoleRemoveAll){
+        editRoleAddAll.addEventListener('click', () => togglePerms(editRolePerms, true));
+        editRoleRemoveAll.addEventListener('click', () => togglePerms(editRolePerms, false));
       }
 
       /* ====== Edit Printer Modal ====== */

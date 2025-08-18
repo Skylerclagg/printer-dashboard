@@ -258,15 +258,16 @@
         }
 
         function initialLoad() {
-            $.getJSON(statusEndpoint)
-                .done(data => {
+            fetch(statusEndpoint, {credentials:'include'})
+                .then(r=>{ if(!r.ok) throw new Error(); return r.json(); })
+                .then(data => {
                     buildAndRenderSlides(data);
                     const refreshInterval = (data.config?.refresh_interval_sec || 30) * 1000;
                     setInterval(() => {
-                        $.getJSON(statusEndpoint).done(buildAndRenderSlides);
+                        fetch(statusEndpoint, {credentials:'include'}).then(r=>r.json()).then(buildAndRenderSlides);
                     }, refreshInterval);
                 })
-                .fail(() => {
+                .catch(() => {
                     kioskContainer.innerHTML = '<h1 style="text-align:center; color: red; padding-top: 2rem;">Error fetching status. Retrying...</h1>';
                     setTimeout(initialLoad, 5000);
                 });
