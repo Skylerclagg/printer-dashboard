@@ -609,7 +609,12 @@
       try{
         const dash = $('#dash');
         const config = data.config || {};
-        const printerData = { ...data }; delete printerData.config;
+        const userCanViewNames = (typeof data.can_view_filenames === 'boolean')
+          ? data.can_view_filenames
+          : (document.body.dataset.userCanViewFilenames === 'true');
+        const printerData = { ...data };
+        delete printerData.config;
+        delete printerData.can_view_filenames;
         let printerArray = Object.entries(printerData);
 
         if (config.sort_by === 'status'){
@@ -633,7 +638,6 @@
           return;
         }
         const userCanUpload = document.body.dataset.userCanUpload === 'true';
-        const userCanViewNames = document.body.dataset.userCanViewFilenames === 'true';
 
         const frag = document.createDocumentFragment();
         for (const [name, p] of printerArray){

@@ -523,7 +523,7 @@ def status_json():
                 processed['filename'] = None
             processed_data[name] = processed
 
-        return jsonify({**processed_data, 'config': config})
+        return jsonify({**processed_data, 'config': config, 'can_view_filenames': can_view_filenames})
     except Exception as e:
         logging.exception("status_json failed")
         return jsonify({"error": "status_unavailable"}), 500
