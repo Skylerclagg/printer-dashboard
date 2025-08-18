@@ -233,7 +233,9 @@
           </button>
           <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
             <li><a class="dropdown-item" href="{{ url_for('manage_account') }}">My Account</a></li>
+            {% if 'admin_panel_access' in user_permissions %}
             <li><a class="dropdown-item" href="{{ url_for('admin') }}">Admin Panel</a></li>
+            {% endif %}
             <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
           </ul>
         </div>
