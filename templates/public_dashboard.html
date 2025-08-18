@@ -35,6 +35,7 @@
       --shadow-color:rgba(0,0,0,.05);
       --skeleton-bg:#e9ecef;
       --top-bar-color: {{ config.top_bar_color|default('#007bff') }};
+      --title-image-height: {{ config.dashboard_title_image_height|default(40) }}px;
       color-scheme: light;
 
       --bs-body-bg: var(--bg-primary);
@@ -72,8 +73,11 @@
       display:flex; align-items:center; justify-content:space-between;
       gap: 1rem;
     }
+    .top-banner.center-title{justify-content:center;}
+    .top-banner.center-title .navbar-nav{position:absolute; right:30px; top:50%; transform:translateY(-50%);}
+    .top-banner.center-title .title{text-align:center;}
     .title{margin:0; font-size:1.6rem; font-weight:600; white-space:nowrap;}
-    .title-image{max-height:40px;}
+    .title-image{height:var(--title-image-height);}
     .navbar-nav{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;}
     .top-banner .nav-link{color:#fff; text-decoration:none; padding:5px 10px; border:1px solid rgba(255,255,255,.3); border-radius:5px;}
     .top-banner .nav-link:hover{background-color:rgba(255,255,255,.12);}
@@ -90,7 +94,7 @@
     .summary-inner{ padding:.85rem 1rem; }
     .stats-grid{
       display:grid;
-      grid-template-columns: repeat(auto-fill,minmax(140px,1fr));
+      grid-template-columns: repeat(auto-fit,minmax(140px,1fr));
       gap: .75rem;
       width:100%;
     }
@@ -114,8 +118,11 @@
     /* Cards grid */
     #dash{
       display:grid;
-      grid-template-columns: repeat(auto-fill,minmax(320px,1fr));
       gap: 20px;
+      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+    }
+    @media (min-width: 960px){
+      #dash{ grid-template-columns: repeat(3,1fr); }
     }
 
     /* Printer card */
@@ -168,8 +175,14 @@
     .filename-line{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size:.9rem;
-      color: var(--text-secondary);
+      color: var(--text-primary);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .filename-line code{
+      color: inherit;
+      background: transparent;
+      padding:0;
     }
 
     /* Status / progress */
@@ -216,7 +229,7 @@
   data-user-can-upload="{{ ('upload_gcode' in user_permissions)|tojson }}"
   data-user-can-view-filenames="{{ user_can_view_filenames|tojson }}"
 >
-  <nav class="top-banner">
+  <nav class="top-banner{% if config.dashboard_title_image_position == 'center' %} center-title{% endif %}">
     <div class="title">
       {% if config.dashboard_title_image %}
         <img src="{{ config.dashboard_title_image }}" alt="{{ dashboard_title }}" class="title-image">
@@ -232,7 +245,10 @@
             Welcome, <strong>{{ session.username }}</strong>
           </button>
           <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+            <li><a class="dropdown-item" href="{{ url_for('manage_account') }}">My Account</a></li>
+            {% if 'admin_panel_access' in user_permissions %}
             <li><a class="dropdown-item" href="{{ url_for('admin') }}">Admin Panel</a></li>
+            {% endif %}
             <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
           </ul>
         </div>
@@ -316,7 +332,7 @@
             <div class="tab-pane fade {% if open_signup_modal %}show active{% endif %}" id="signup-pane" role="tabpanel">
               {% set errs = signup_errors or {} %}
               {% set vals = signup_values or {} %}
-              <form action="{{ url_for('register') }}" method="POST" novalidate>
+              <form action="{{ url_for('signup') }}" method="POST" novalidate>
                 <div class="mb-3">
                   <label class="form-label">Username</label>
                   <input type="text" name="username" class="form-control {% if errs.get('username') %}is-invalid{% endif %}"
@@ -429,6 +445,7 @@
     }
 
     let refreshTimeout;
+    let firstLoad = true;
 
     function colorKey(str){ return String(str || '').toLowerCase().replace(/\s+/g,'_'); }
     function resolveImageSrc(p){
@@ -602,11 +619,16 @@
     }
     window.addEventListener('resize', () => { clearTimeout(window.__eqT); window.__eqT = setTimeout(equalizeCardHeights, 100); });
 
-    function render(data){
+    function render(data, initial){
       try{
         const dash = $('#dash');
         const config = data.config || {};
-        const printerData = { ...data }; delete printerData.config;
+        const userCanViewNames = (typeof data.can_view_filenames === 'boolean')
+          ? data.can_view_filenames
+          : (document.body.dataset.userCanViewFilenames === 'true');
+        const printerData = { ...data };
+        delete printerData.config;
+        delete printerData.can_view_filenames;
         let printerArray = Object.entries(printerData);
 
         if (config.sort_by === 'status'){
@@ -624,22 +646,32 @@
 
         updateStatsFromArray(printerArray, config);
 
-        dash.empty();
+        const userCanUpload = document.body.dataset.userCanUpload === 'true';
+
+        const existing = new Map(Array.from(document.querySelectorAll('.printer-card')).map(card => [card.dataset.printerName, card]));
+
+        if (initial) dash.empty();
         if (!printerArray.length){
           dash.html('<div class="col-12"><p class="text-center">No printers found. Please add one in the Admin Panel.</p></div>');
           return;
         }
-        const userCanUpload = document.body.dataset.userCanUpload === 'true';
-        const userCanViewNames = document.body.dataset.userCanViewFilenames === 'true';
 
-        const frag = document.createDocumentFragment();
         for (const [name, p] of printerArray){
           const html = createPrinterCardHTML(name, p, config, userCanUpload, userCanViewNames);
           const wrap = document.createElement('div');
           wrap.innerHTML = html.trim();
-          frag.appendChild(wrap.firstElementChild);
+          const newCard = wrap.firstElementChild;
+          const oldCard = existing.get(name);
+          if (oldCard){
+            oldCard.replaceWith(newCard);
+            existing.delete(name);
+          } else {
+            document.getElementById('dash').appendChild(newCard);
+          }
         }
-        document.getElementById('dash').appendChild(frag);
+
+        // Remove cards for printers no longer present
+        for (const card of existing.values()) card.remove();
 
         equalizeCardHeights();
       } catch(err){
@@ -649,15 +681,19 @@
     }
 
     function fetchAndRender(){
-      $.getJSON('/status_json')
-        .done(data=>{
+      fetch('/status_json', {credentials:'include'})
+        .then(r=>{ if(!r.ok) throw new Error(); return r.json(); })
+        .then(data=>{
           const refreshInterval = (data.config && data.config.refresh_interval_sec) ? data.config.refresh_interval_sec*1000 : 30000;
-          render(data);
+          render(data, firstLoad);
+          firstLoad = false;
           clearTimeout(refreshTimeout);
           refreshTimeout = setTimeout(fetchAndRender, refreshInterval);
         })
-        .fail(()=>{
-          $('#dash').html('<p class="text-center text-danger">Failed to fetch printer status. Retrying in 30 seconds…</p>');
+        .catch(()=>{
+          if (firstLoad){
+            $('#dash').html('<p class="text-center text-danger">Failed to fetch printer status. Retrying in 30 seconds…</p>');
+          }
           clearTimeout(refreshTimeout);
           refreshTimeout = setTimeout(fetchAndRender, 30000);
         });
