@@ -754,7 +754,8 @@
                                 <td>{{ data.get('name','') }}</td>
                                 <td>{{ data.get('email','') }}</td>
                                 <td>{{ data.role }}</td>
-                                <td class="d-flex gap-2 flex-wrap">
+                                <td>
+                                  <div class="d-flex gap-2 flex-wrap">
                                   {% if session.role == 'system' or (roles.get(data.role, {}).get('level', 0)|int < roles.get(session.role, {}).get('level', 0)|int) %}
                                     {% if 'edit_user' in user_permissions %}
                                     <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
@@ -787,6 +788,7 @@
                                     </form>
                                     {% endif %}
                                   {% endif %}
+                                  </div>
                                 </td>
                               </tr>
                               {% endfor %}
