@@ -879,8 +879,11 @@ def add_role(active_tab):
     role_name = (request.form.get('role_name') or '').lower().replace(' ', '_')
     permissions = request.form.getlist('permissions')
     level = int(request.form.get('level', 1))
+    user_role_name = session.get('role', '')
+    user_permissions = roles.get(user_role_name, {}).get('permissions', [])
     if role_name and role_name not in roles:
-        roles[role_name] = {'permissions': permissions, 'level': level}
+        allowed_perms = [p for p in permissions if p in user_permissions]
+        roles[role_name] = {'permissions': allowed_perms, 'level': level}
         save_data(roles, ROLES_FILE)
         flash(f"Role '{role_name}' created.", 'success')
     else:
@@ -909,7 +912,17 @@ def edit_role_post(active_tab):
         return redirect(url_for('admin', tab=active_tab))
     permissions = request.form.getlist('permissions')
     level = int(request.form.get('level', 1))
-    roles[role_name]['permissions'] = permissions
+    user_role_name = session.get('role', '')
+    user_permissions = set(roles.get(user_role_name, {}).get('permissions', []))
+    current_perms = set(role_to_edit.get('permissions', []))
+    final_perms = set(current_perms)
+    requested_perms = set(permissions)
+    for perm in user_permissions:
+        if perm in requested_perms:
+            final_perms.add(perm)
+        else:
+            final_perms.discard(perm)
+    roles[role_name]['permissions'] = sorted(final_perms)
     roles[role_name]['level'] = level
     save_data(roles, ROLES_FILE)
     flash(f"Role '{role_name}' updated.", 'success')

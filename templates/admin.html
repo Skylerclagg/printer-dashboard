@@ -905,7 +905,7 @@
                       <div class="permissions-grid">
                         {% for perm in available_permissions %}
                         <div class="form-check">
-                          <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="perm_{{ perm }}">
+                          <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="perm_{{ perm }}" {% if perm not in user_permissions %}disabled{% endif %}>
                           <label class="form-check-label" for="perm_{{ perm }}">{{ perm_names.get(perm, perm) }}</label>
                         </div>
                         {% endfor %}
@@ -1267,7 +1267,7 @@
                 <div class="permissions-grid" id="edit-role-permissions">
                   {% for perm in available_permissions %}
                   <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="edit_perm_{{ perm }}">
+                    <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="edit_perm_{{ perm }}" {% if perm not in user_permissions %}disabled{% endif %}>
                     <label class="form-check-label" for="edit_perm_{{ perm }}">{{ perm_names.get(perm, perm) }}</label>
                   </div>
                   {% endfor %}
