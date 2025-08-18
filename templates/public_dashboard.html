@@ -441,6 +441,7 @@
     }
 
     let refreshTimeout;
+    let firstLoad = true;
 
     function colorKey(str){ return String(str || '').toLowerCase().replace(/\s+/g,'_'); }
     function resolveImageSrc(p){
@@ -614,7 +615,7 @@
     }
     window.addEventListener('resize', () => { clearTimeout(window.__eqT); window.__eqT = setTimeout(equalizeCardHeights, 100); });
 
-    function render(data){
+    function render(data, initial){
       try{
         const dash = $('#dash');
         const config = data.config || {};
@@ -641,21 +642,32 @@
 
         updateStatsFromArray(printerArray, config);
 
-        dash.empty();
+        const userCanUpload = document.body.dataset.userCanUpload === 'true';
+
+        const existing = new Map(Array.from(document.querySelectorAll('.printer-card')).map(card => [card.dataset.printerName, card]));
+
+        if (initial) dash.empty();
         if (!printerArray.length){
           dash.html('<div class="col-12"><p class="text-center">No printers found. Please add one in the Admin Panel.</p></div>');
           return;
         }
-        const userCanUpload = document.body.dataset.userCanUpload === 'true';
 
-        const frag = document.createDocumentFragment();
         for (const [name, p] of printerArray){
           const html = createPrinterCardHTML(name, p, config, userCanUpload, userCanViewNames);
           const wrap = document.createElement('div');
           wrap.innerHTML = html.trim();
-          frag.appendChild(wrap.firstElementChild);
+          const newCard = wrap.firstElementChild;
+          const oldCard = existing.get(name);
+          if (oldCard){
+            oldCard.replaceWith(newCard);
+            existing.delete(name);
+          } else {
+            document.getElementById('dash').appendChild(newCard);
+          }
         }
-        document.getElementById('dash').appendChild(frag);
+
+        // Remove cards for printers no longer present
+        for (const card of existing.values()) card.remove();
 
         equalizeCardHeights();
       } catch(err){
@@ -668,12 +680,15 @@
       $.getJSON('/status_json')
         .done(data=>{
           const refreshInterval = (data.config && data.config.refresh_interval_sec) ? data.config.refresh_interval_sec*1000 : 30000;
-          render(data);
+          render(data, firstLoad);
+          firstLoad = false;
           clearTimeout(refreshTimeout);
           refreshTimeout = setTimeout(fetchAndRender, refreshInterval);
         })
         .fail(()=>{
-          $('#dash').html('<p class="text-center text-danger">Failed to fetch printer status. Retrying in 30 seconds…</p>');
+          if (firstLoad){
+            $('#dash').html('<p class="text-center text-danger">Failed to fetch printer status. Retrying in 30 seconds…</p>');
+          }
           clearTimeout(refreshTimeout);
           refreshTimeout = setTimeout(fetchAndRender, 30000);
         });
