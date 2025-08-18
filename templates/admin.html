@@ -254,7 +254,7 @@
                           {% for printer in printers %}
                           <tr>
                             <td>{{ printer.name }}</td>
-                            <td>{{ printer.type }}</td>
+                            <td>{{ printer.type|capitalize }}</td>
                             <td>
                               {% if printer.type == 'prusa' %}{{ printer.ip }} / {{ printer.api_key[:4] }}...{% endif %}
                               {% if printer.type == 'klipper' %}{{ printer.url }}{% endif %}
