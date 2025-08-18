@@ -90,7 +90,7 @@
     .summary-inner{ padding:.85rem 1rem; }
     .stats-grid{
       display:grid;
-      grid-template-columns: repeat(auto-fill,minmax(140px,1fr));
+      grid-template-columns: repeat(auto-fit,minmax(140px,1fr));
       gap: .75rem;
       width:100%;
     }
@@ -114,7 +114,7 @@
     /* Cards grid */
     #dash{
       display:grid;
-      grid-template-columns: repeat(auto-fill,minmax(320px,1fr));
+      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
       gap: 20px;
     }
 
@@ -232,6 +232,7 @@
             Welcome, <strong>{{ session.username }}</strong>
           </button>
           <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+            <li><a class="dropdown-item" href="{{ url_for('account') }}">My Account</a></li>
             <li><a class="dropdown-item" href="{{ url_for('admin') }}">Admin Panel</a></li>
             <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
           </ul>
