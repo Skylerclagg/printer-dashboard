@@ -23,7 +23,7 @@
         <h1>Edit Role: {{ role_name }}</h1>
         <form method="POST">
             <div class="form-grid">
-                <div><label>Permission Level (1-89)</label><input type="number" name="level" min="1" max="89" value="{{ role_data.level }}" required></div>
+                <div><label>Permission Level (1-99)</label><input type="number" name="level" min="1" max="99" value="{{ role_data.level }}" required></div>
             </div>
             <h4>Permissions:</h4>
             <div class="permissions-grid">
@@ -36,7 +36,7 @@
             </div>
             <div style="margin-top: 2rem;">
                 <button type="submit">Save Changes</button>
-                <a href="{{ url_for('admin') }}" class="button">Cancel</a>
+                <a href="{{ url_for('admin', tab='user-role') }}" class="button">Cancel</a>
             </div>
         </form>
     </div>

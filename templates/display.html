@@ -13,23 +13,44 @@
 </head>
 <body>
     <div id="kiosk-container"><h1 style="text-align:center; padding-top: 2rem; color: white;">Loading Display...</h1></div>
+    
+    <!-- Embed initial data in a safe script tag -->
+    <script id="kiosk-data" type="application/json">
+        {{ kiosk_config|tojson|safe }}
+    </script>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         const kioskContainer = document.getElementById('kiosk-container');
         const kioskId = "{{ kiosk_id }}";
+        let initialKioskConfig = JSON.parse(document.getElementById('kiosk-data').textContent);
         let slides = [];
         let currentSlideIndex = 0;
+        
+        // Timer state variables
         let slideTimeout;
+        let slideStartTime;
+        let slideDuration;
 
-        function buildAndRenderSlides(data) {
-            const kioskConfig = data.kiosk_config || {};
+        function buildAndRenderSlides(kioskConfig) {
+            // Calculate time remaining on the current slide before rebuilding
+            let timeRemaining = null;
+            if (slideStartTime && slideDuration) {
+                const elapsedTime = Date.now() - slideStartTime;
+                timeRemaining = slideDuration - elapsedTime;
+                if (timeRemaining < 0) {
+                    timeRemaining = 0; // If timer expired, change immediately
+                }
+            }
+
             document.body.style.backgroundColor = kioskConfig.kiosk_background_color || '#000';
-
+            
             slides = kioskConfig.kiosk_images || [];
             
             kioskContainer.innerHTML = '';
             if (slides.length === 0) {
-                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">Please add an image</h1>';
+                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">Please add an active image in the admin panel.</h1>';
+                clearTimeout(slideTimeout);
                 return;
             }
 
@@ -41,68 +62,65 @@
                 kioskContainer.appendChild(slideDiv);
             });
 
-            // Don't reset the slide index if it's still valid
             if (currentSlideIndex >= slides.length) {
                 currentSlideIndex = 0;
             }
 
-            // Ensure the currently selected slide remains visible
             showCurrentSlide();
-
-            // Restart the slideshow timer using the current slide's delay
-            cycleSlide();
+            // Restart the timer with the remaining time
+            cycleSlide(kioskConfig, timeRemaining);
         }
 
         function showCurrentSlide() {
             if (slides.length === 0) return;
-
-            document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
-
-            let slideEl = document.getElementById('slide-' + currentSlideIndex);
-            if (!slideEl) {
-                console.warn(`slide-${currentSlideIndex} not found, falling back to slide-0`);
+            if (currentSlideIndex >= slides.length) {
                 currentSlideIndex = 0;
-                slideEl = document.getElementById('slide-0');
-                if (!slideEl) return;
+            }
+            $('.slide').removeClass('active');
+            $('#slide-' + currentSlideIndex).addClass('active');
+        }
+
+        function cycleSlide(kioskConfig, initialDelay = null) {
+            clearTimeout(slideTimeout);
+            if (slides.length <= 1) {
+                return;
             }
 
-            slideEl.classList.add('active');
-        }
-
-        function cycleSlide() {
-            clearTimeout(slideTimeout);
-            if (slides.length === 0) return;
-
-            showCurrentSlide();
-
-            if (slides.length <= 1) return;
-
             const current = slides[currentSlideIndex];
-            const delaySec = current.time || 5;
+            slideDuration = (current.time || kioskConfig.kiosk_image_page_time || 5) * 1000;
+            
+            // Use the initialDelay if provided (from a refresh), otherwise use the full duration
+            const delay = initialDelay !== null ? initialDelay : slideDuration;
 
-            currentSlideIndex = (currentSlideIndex + 1) % slides.length;
-            slideTimeout = setTimeout(cycleSlide, delaySec * 1000);
+            slideStartTime = Date.now();
+            slideTimeout = setTimeout(() => {
+                currentSlideIndex = (currentSlideIndex + 1) % slides.length;
+                showCurrentSlide();
+                // Subsequent calls will use the full duration
+                cycleSlide(kioskConfig);
+            }, delay);
         }
 
-        function initialLoad() {
-            $.getJSON(`/kiosk_data/${kioskId}`)
+        function fetchData() {
+            $.getJSON(`/status_json?kiosk=${kioskId}`)
                 .done(data => {
-                    const refreshInterval = (data.refresh_interval_sec || 30) * 1000;
-                    buildAndRenderSlides(data);
-                    
-                    // Set up a separate timer to refresh the data in the background
-                    setInterval(() => {
-                        $.getJSON(`/kiosk_data/${kioskId}`).done(buildAndRenderSlides);
-                    }, refreshInterval);
+                    if (data.kiosk_config) {
+                        data.kiosk_config.kiosk_images = (data.kiosk_config.kiosk_images || []).filter(img => img.active !== false);
+                        buildAndRenderSlides(data.kiosk_config);
+                    }
                 })
                 .fail(() => {
-                    kioskContainer.innerHTML = '<h1 style="text-align:center; color: red; padding-top: 2rem;">Error fetching kiosk data. Retrying...</h1>';
-                    setTimeout(initialLoad, 5000);
+                    console.error("Failed to fetch kiosk data update.");
                 });
         }
 
-        $(document).ready(function(){
-            initialLoad();
+        $(document).ready(function() {
+            // Initial render with data from the server
+            buildAndRenderSlides(initialKioskConfig);
+
+            // Set up a timer to periodically fetch new data
+            const refreshInterval = (initialKioskConfig.refresh_interval_sec || 30) * 1000;
+            setInterval(fetchData, refreshInterval);
         });
     </script>
 </body>

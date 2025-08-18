@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ dashboard_title }}</title>
+
+  <!-- Pre-paint theme -->
+  <script>
+    (function () {
+      try {
+        const saved = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = saved || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-bs-theme', theme);
+      } catch {
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.setAttribute('data-bs-theme', 'light');
+      }
+    })();
+  </script>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg-primary:#f8f9fa;
+      --bg-secondary:#ffffff;
+      --text-primary:#212529;
+      --text-secondary:#6c757d;
+      --border-color:#dee2e6;
+      --card-bg:#ffffff;
+      --shadow-color:rgba(0,0,0,.05);
+      --skeleton-bg:#e9ecef;
+      --top-bar-color: {{ config.top_bar_color|default('#007bff') }};
+      color-scheme: light;
+
+      --bs-body-bg: var(--bg-primary);
+      --bs-body-color: var(--text-primary);
+      --bs-border-color: var(--border-color);
+      --bs-card-bg: var(--card-bg);
+      --bs-card-color: var(--text-primary);
+      --bs-link-color: #0d6efd;
+    }
+    [data-theme="dark"]{
+      --bg-primary:#121212;
+      --bg-secondary:#1e1e1e;
+      --text-primary:#e0e0e0;
+      --text-secondary:#a0a0a0;
+      --border-color:#3a3a3a;
+      --card-bg:#1e1e1e;
+      --shadow-color:rgba(0,0,0,.3);
+      --skeleton-bg:#3a3a3a;
+      color-scheme: dark;
+    }
+    body{
+      background-color:var(--bg-primary);
+      color:var(--text-primary);
+      transition:background-color .3s ease,color .3s ease;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    }
+
+    /* Top bar */
+    .top-banner{
+      background: var(--top-bar-color) !important;
+      color:#fff;
+      padding:10px 30px;
+      position:sticky; top:0; z-index:1100;
+      box-shadow:0 2px 10px rgba(0,0,0,.1);
+      display:flex; align-items:center; justify-content:space-between;
+      gap: 1rem;
+    }
+    .title{margin:0; font-size:1.6rem; font-weight:600; white-space:nowrap;}
+    .title-image{max-height:40px;}
+    .navbar-nav{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;}
+    .top-banner .nav-link{color:#fff; text-decoration:none; padding:5px 10px; border:1px solid rgba(255,255,255,.3); border-radius:5px;}
+    .top-banner .nav-link:hover{background-color:rgba(255,255,255,.12);}
+    .theme-toggle{background:none; border:1px solid rgba(255,255,255,.35); color:#fff; padding:5px 10px; border-radius:5px; cursor:pointer; font-size:1.2rem;}
+
+    .container{padding-top:1.2rem; max-width:1600px;}
+
+    /* FULL-WIDTH Status summary */
+    .summary-wrap{
+      width:100%;
+      background: var(--bg-secondary);
+      border-bottom:1px solid var(--border-color);
+    }
+    .summary-inner{ padding:.85rem 1rem; }
+    .stats-grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fill,minmax(140px,1fr));
+      gap: .75rem;
+      width:100%;
+    }
+    .stat-item{
+      background: var(--card-bg);
+      border:1px solid var(--border-color);
+      border-radius:12px;
+      padding:.75rem .9rem;
+      text-align:center;
+      position:relative;
+      overflow:hidden;
+    }
+    .stat-item::before{
+      content:'';
+      position:absolute; left:0; right:0; top:0;
+      height:4px; background: var(--stripe, var(--border-color));
+    }
+    .stat-value{font-size:1.6rem; font-weight:700; color:var(--text-primary);}
+    .stat-label{font-size:.8rem; text-transform:uppercase; color:var(--text-secondary); letter-spacing:.02em;}
+
+    /* Cards grid */
+    #dash{
+      display:grid;
+      grid-template-columns: repeat(auto-fill,minmax(320px,1fr));
+      gap: 20px;
+    }
+
+    /* Printer card */
+    .printer-card{
+      background: var(--card-bg);
+      color: var(--text-primary);
+      border:2px solid var(--border-color); /* overridden per card via inline style */
+      border-radius: 15px;
+      box-shadow: 0 2px 8px var(--shadow-color);
+      display:flex; flex-direction:column;
+      height:100%;
+      transition: transform .06s ease, box-shadow .12s ease, border-color .12s ease;
+    }
+    .printer-card.clickable{ cursor:pointer; }
+    .printer-card.clickable:hover{ transform: translateY(-1px); box-shadow:0 8px 20px var(--shadow-color); }
+
+    .printer-card .card-body{
+      display:flex; flex-direction:column; gap:.5rem;
+      padding:1rem 1rem 0.9rem;
+    }
+    .printer-header{
+      display:flex; align-items:center; justify-content:space-between;
+      padding-bottom:.5rem; margin-bottom:.5rem;
+      border-bottom:1px solid var(--border-color);
+    }
+    .printer-header h3{font-size:1.05rem; margin:0; display:flex; align-items:center; gap:.5rem;}
+    .status-indicator{width:11px; height:11px; border-radius:50%;}
+    .status-indicator.ready{background:#28a745;}
+    .status-indicator.printing{background:#007bff;}
+    .status-indicator.paused{background:#ffc107;}
+    .status-indicator.finished{background:#ff8c00;}
+    .status-indicator.service{background:#6c757d;}
+    .status-indicator.offline{background:#dc3545;}
+
+    /* Image area */
+    .image-slot{
+      height: 180px;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .printer-img{
+      max-width:100%;
+      max-height:100%;
+      object-fit:contain;
+      display:block;
+      border:0;
+      background: transparent;
+    }
+
+    /* Filename line */
+    .filename-line{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:.9rem;
+      color: var(--text-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Status / progress */
+    .state-row{ display:flex; flex-direction:column; gap:.4rem; }
+    .state-badge{
+      display:inline-block; padding:.25rem .5rem; border-radius:9999px;
+      font-weight:600; font-size:.9rem; color:#fff;
+    }
+    .progress{height: 20px; background-color: var(--border-color);}
+    .progress .progress-bar{font-weight:600;}
+
+    /* Temps row */
+    .temps{
+      display:grid; grid-template-columns: repeat(2,1fr);
+      gap: .5rem; text-align:center; margin-top: .2rem;
+    }
+    .temps .label{font-weight:600;}
+    .temps .value{color: var(--text-secondary);}
+
+    /* Skeletons */
+    .skeleton-card{
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 15px;
+      box-shadow: 0 2px 8px var(--shadow-color);
+      padding: 1rem;
+    }
+    .skeleton{background: var(--skeleton-bg); border-radius: .25rem; animation: pulse 1.5s ease-in-out infinite;}
+    @keyframes pulse{50%{opacity:.5}}
+    .skeleton.skeleton-header{height: 22px; width: 60%; margin-bottom: .8rem;}
+    .skeleton.skeleton-line{height: 14px; width: 90%; margin:.25rem 0;}
+    .skeleton.skeleton-image{height: 180px; width: 100%;}
+
+    /* Modals */
+    .modal-content{background: var(--card-bg); border:1px solid var(--border-color);}
+    .modal-header{border-bottom-color: var(--border-color);}
+    .modal-footer{border-top-color: var(--border-color);}
+    [data-theme="dark"] .btn-close{filter: invert(1) grayscale(100) brightness(200%);}
+
+    .flash{ position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 1101; min-width: 300px; }
+  </style>
+</head>
+<body
+  data-user-can-upload="{{ ('upload_gcode' in user_permissions)|tojson }}"
+  data-user-can-view-filenames="{{ user_can_view_filenames|tojson }}"
+>
+  <nav class="top-banner">
+    <div class="title">
+      {% if config.dashboard_title_image %}
+        <img src="{{ config.dashboard_title_image }}" alt="{{ dashboard_title }}" class="title-image">
+      {% else %}
+        {{ dashboard_title }}
+      {% endif %}
+    </div>
+
+    <div class="navbar-nav">
+      {% if 'username' in session %}
+        <div class="dropdown">
+          <button class="btn btn-outline-light dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+            Welcome, <strong>{{ session.username }}</strong>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+            <li><a class="dropdown-item" href="{{ url_for('admin') }}">Admin Panel</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
+          </ul>
+        </div>
+      {% else %}
+        <button type="button" class="btn btn-outline-light" data-bs-toggle="modal" data-bs-target="#loginModal">
+          Login
+        </button>
+      {% endif %}
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+        <span id="themeIcon">🌙</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- FULL-WIDTH STATUS SUMMARY BAR -->
+  <div class="summary-wrap">
+    <div class="container-fluid summary-inner">
+      <div id="status-summary" class="stats-grid"></div>
+    </div>
+  </div>
+
+  <div class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Cards grid -->
+    <div id="dash" class="mt-3"></div>
+  </div>
+
+  <!-- Login / Signup Modal -->
+  <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="loginModalLabel">Welcome</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <ul class="nav nav-tabs" id="authTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link {% if not open_signup_modal %}active{% endif %}" id="login-tab"
+                      data-bs-toggle="tab" data-bs-target="#login-pane" type="button" role="tab">Login</button>
+            </li>
+            {% if allow_signup %}
+            <li class="nav-item" role="presentation">
+              <button class="nav-link {% if open_signup_modal %}active{% endif %}" id="signup-tab"
+                      data-bs-toggle="tab" data-bs-target="#signup-pane" type="button" role="tab">Create Account</button>
+            </li>
+            {% endif %}
+          </ul>
+
+          <div class="tab-content pt-3">
+            <!-- Login -->
+            <div class="tab-pane fade {% if not open_signup_modal %}show active{% endif %}" id="login-pane" role="tabpanel">
+              <form action="{{ url_for('root') }}" method="POST">
+                <div class="mb-3">
+                  <label class="form-label">Username</label>
+                  <input type="text" name="username" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Password</label>
+                  <input type="password" name="password" class="form-control" required>
+                </div>
+                <div class="d-grid">
+                  <button type="submit" class="btn btn-primary">Login</button>
+                </div>
+              </form>
+            </div>
+
+            {% if allow_signup %}
+            <!-- Signup -->
+            <div class="tab-pane fade {% if open_signup_modal %}show active{% endif %}" id="signup-pane" role="tabpanel">
+              {% set errs = signup_errors or {} %}
+              {% set vals = signup_values or {} %}
+              <form action="{{ url_for('register') }}" method="POST" novalidate>
+                <div class="mb-3">
+                  <label class="form-label">Username</label>
+                  <input type="text" name="username" class="form-control {% if errs.get('username') %}is-invalid{% endif %}"
+                         value="{{ vals.get('username','') }}" required>
+                  {% if errs.get('username') %}
+                    <div class="invalid-feedback">{{ errs['username'] }}</div>
+                  {% endif %}
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Full Name</label>
+                  <input type="text" name="full_name" class="form-control"
+                         value="{{ vals.get('full_name','') }}">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Email</label>
+                  <input type="email" name="email" class="form-control {% if errs.get('email') %}is-invalid{% endif %}"
+                         value="{{ vals.get('email','') }}">
+                  {% if errs.get('email') %}
+                    <div class="invalid-feedback">{{ errs['email'] }}</div>
+                  {% endif %}
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Password</label>
+                  <input type="password" name="password" class="form-control {% if errs.get('password') %}is-invalid{% endif %}" required>
+                  {% if errs.get('password') %}
+                    <div class="invalid-feedback">{{ errs['password'] }}</div>
+                  {% endif %}
+                </div>
+                {% if errs.get('general') %}
+                  <div class="alert alert-danger">{{ errs['general'] }}</div>
+                {% endif %}
+                <div class="d-grid">
+                  <button type="submit" class="btn btn-success">Create Account</button>
+                </div>
+              </form>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Modal -->
+  <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="uploadModalLabel">Submit Print</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form action="{{ url_for('handle_upload') }}" method="POST" enctype="multipart/form-data">
+          <div class="modal-body">
+            <p class="text-muted">Your file will be submitted for approval before printing.</p>
+            <input type="hidden" name="printer_name" id="modalPrinterName">
+
+            <div class="mb-3">
+              <label class="form-label">G-Code File</label>
+              <input type="file" name="gcode_file" class="form-control" accept=".gcode,.gco,.g" required>
+            </div>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label">Filament Color</label>
+                <input type="text" name="color" class="form-control" placeholder="e.g., Blue PLA" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Priority</label>
+                <select name="priority" class="form-select">
+                  <option>Normal</option><option>High</option><option>Low</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="form-label">Comments (Optional)</label>
+              <textarea name="comments" class="form-control" placeholder="Any notes for the approver..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-primary" type="submit">Submit for Approval</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const OPEN_SIGNUP = JSON.parse('{{ open_signup_modal|default(false)|tojson }}');
+
+    function setTheme(theme){
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      try{ localStorage.setItem('theme', theme); }catch{}
+      const icon = document.getElementById('themeIcon');
+      if (icon) icon.textContent = (theme === 'dark') ? '☀️' : '🌙';
+    }
+    function initializeTheme(){
+      const current = document.documentElement.getAttribute('data-theme') ||
+                      localStorage.getItem('theme') || 'light';
+      setTheme(current);
+    }
+    function toggleTheme(){
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+
+    let refreshTimeout;
+
+    function colorKey(str){ return String(str || '').toLowerCase().replace(/\s+/g,'_'); }
+    function resolveImageSrc(p){
+      const raw = (p.image_src || p.image_url || '').trim();
+      if (!raw) return '';
+      if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('/')) return raw;
+      return '/static/' + raw.replace(/^\/+/, '');
+    }
+    function aliasState(state, config){
+      if (!state) return 'Unknown';
+      const aliases = config.status_aliases || {};
+      return aliases[state] || state;
+    }
+    function stateToClass(displayState){
+      if (['Ready','Idle','Operational','Finished'].includes(displayState)) return 'ready';
+      if (displayState === 'Printing') return 'printing';
+      if (displayState === 'Paused') return 'paused';
+      if (displayState === 'Under Maintenance' || displayState === 'Maintenance') return 'service';
+      if (['Offline','Error','Config Error','Unsupported'].includes(displayState)) return 'offline';
+      return 'offline';
+    }
+    function formatTime(s){
+      if (s === null || s <= 0) return '—';
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600)/60);
+      return h>0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function showSkeletonLoaders(n=6){
+      const dash = $('#dash'); dash.empty();
+      for(let i=0;i<n;i++){
+        dash.append(`
+          <div class="skeleton-card">
+            <div class="skeleton skeleton-header"></div>
+            <div class="skeleton skeleton-image mb-2"></div>
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line" style="width:70%"></div>
+          </div>
+        `);
+      }
+    }
+
+    function createPrinterCardHTML(name, p, config, userCanUpload, userCanViewNames){
+      const displayState = aliasState(p.state || 'Unknown', config);
+      const stateClass = stateToClass(displayState);
+
+      const nozzleTemp  = (typeof p.nozzle_temp === 'number') ? p.nozzle_temp.toFixed(1) + '°C' : '—';
+      const bedTemp     = (typeof p.bed_temp    === 'number') ? p.bed_temp.toFixed(1) + '°C'    : '—';
+      const progressPct = (typeof p.progress    === 'number') ? p.progress.toFixed(1)           : null;
+
+      const imgSrc = resolveImageSrc(p);
+      const imageHtml = imgSrc
+        ? `<img src="${imgSrc}" alt="Printer image for ${name}" class="printer-img" loading="lazy"
+                 onload="equalizeCardHeights()" onerror="this.remove(); equalizeCardHeights()">`
+        : '';
+
+      const badgeColor = (config.status_colors && config.status_colors[colorKey(displayState)]) || '#6c757d';
+      const progressBarColor = config.progress_bar_color || '#007bff';
+      const progressTextColor = config.progress_bar_text_color || '#ffffff';
+
+      let filenameHtml = '';
+      if (p.show_filename && userCanViewNames && p.filename){
+        filenameHtml = `<div class="filename-line"><i class="bi bi-file-earmark-code"></i> <code>${p.filename}</code></div>`;
+      }
+
+      let stateProgressHtml = `
+        <div class="state-row">
+          <span class="state-badge" style="background:${badgeColor}">${displayState}</span>
+      `;
+      if ((displayState === 'Printing' || displayState === 'Paused') && progressPct !== null){
+        stateProgressHtml += `
+          <div class="progress" role="progressbar" aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar" style="width:${progressPct}%; background:${progressBarColor}; color:${progressTextColor}">
+              ${progressPct}%
+            </div>
+          </div>
+          <div class="d-flex justify-content-between text-muted small">
+            <span><i class="bi bi-stopwatch"></i> Elapsed: ${formatTime(p.time_elapsed)}</span>
+            <span><i class="bi bi-hourglass-split"></i> Remaining: ${formatTime(p.time_remaining)}</span>
+          </div>
+        `;
+      }
+      stateProgressHtml += `</div>`;
+
+      const tempsHtml = `
+        <div class="temps">
+          <div>
+            <div class="label"><i class="bi bi-thermometer-half"></i> Nozzle</div>
+            <div class="value">${nozzleTemp}</div>
+          </div>
+          <div>
+            <div class="label"><i class="bi bi-hdd-stack"></i> Bed</div>
+            <div class="value">${bedTemp}</div>
+          </div>
+        </div>
+      `;
+
+      const canClick = userCanUpload && p.accepts_uploads;
+      const clickableCls = canClick ? 'clickable' : '';
+      const dataAttrs = `data-accepts="${canClick ? '1' : '0'}" data-printer-name="${name}"`;
+
+      return `
+        <div class="printer-card ${clickableCls}" ${dataAttrs} style="border-color:${badgeColor}">
+          <div class="card-body">
+            <div class="printer-header">
+              <h3><span class="status-indicator ${stateClass}"></span> ${name}</h3>
+              <span class="badge bg-secondary">${p.type || 'N/A'}</span>
+            </div>
+
+            <div class="image-slot">${imageHtml}</div>
+
+            ${filenameHtml}
+
+            ${stateProgressHtml}
+
+            ${tempsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function computeAndRenderStats(printerArray, config){
+      const el = document.getElementById('status-summary');
+      if (!el) return;
+      el.innerHTML = '';
+      const items = config.status_summary_items || ['Ready','Printing','Maintenance','Offline','Total'];
+
+      const counts = {};
+      for (const [, p] of printerArray){
+        const st = aliasState(p.state, config);
+        counts[st] = (counts[st]||0) + 1;
+      }
+      const total = printerArray.length;
+
+      function labelToCount(lbl){
+        if (lbl === 'Total') return total;
+        if (lbl === 'Maintenance') {
+          return (counts['Maintenance']||0) + (counts['Under Maintenance']||0);
+        }
+        return counts[lbl] || 0;
+      }
+
+      for (const lbl of items){
+        const ck = colorKey(lbl === 'Maintenance' ? 'under_maintenance' : lbl);
+        const stripe = (config.status_colors && config.status_colors[ck]) || '#6c757d';
+        const node = document.createElement('div');
+        node.className = 'stat-item';
+        node.style.setProperty('--stripe', stripe);
+        node.innerHTML = `
+          <div class="stat-value">${labelToCount(lbl)}</div>
+          <div class="stat-label">${lbl}</div>
+        `;
+        el.appendChild(node);
+      }
+    }
+
+    function updateStatsFromArray(printerArray, config){
+      computeAndRenderStats(printerArray, config);
+    }
+
+    function equalizeCardHeights(){
+      const cards = Array.from(document.querySelectorAll('.printer-card'));
+      if (!cards.length) return;
+      cards.forEach(c => c.style.height = 'auto');
+      let max = 0;
+      for (const c of cards){
+        const h = c.getBoundingClientRect().height;
+        if (h > max) max = h;
+      }
+      cards.forEach(c => c.style.height = Math.ceil(max) + 'px');
+    }
+    window.addEventListener('resize', () => { clearTimeout(window.__eqT); window.__eqT = setTimeout(equalizeCardHeights, 100); });
+
+    function render(data){
+      try{
+        const dash = $('#dash');
+        const config = data.config || {};
+        const printerData = { ...data }; delete printerData.config;
+        let printerArray = Object.entries(printerData);
+
+        if (config.sort_by === 'status'){
+          const order = config.status_order || [];
+          const map = new Map(order.map((s,i)=>[s,i]));
+          printerArray.sort(([,a],[,b])=>{
+            const sa = aliasState(a.state, config), sb = aliasState(b.state, config);
+            return (map.get(sa)??999) - (map.get(sb)??999);
+          });
+        } else {
+          const order = config.printer_order || [];
+          const map = new Map(order.map((n,i)=>[n,i]));
+          printerArray.sort(([an],[bn]) => (map.get(an)??999) - (map.get(bn)??999));
+        }
+
+        updateStatsFromArray(printerArray, config);
+
+        dash.empty();
+        if (!printerArray.length){
+          dash.html('<div class="col-12"><p class="text-center">No printers found. Please add one in the Admin Panel.</p></div>');
+          return;
+        }
+        const userCanUpload = document.body.dataset.userCanUpload === 'true';
+        const userCanViewNames = document.body.dataset.userCanViewFilenames === 'true';
+
+        const frag = document.createDocumentFragment();
+        for (const [name, p] of printerArray){
+          const html = createPrinterCardHTML(name, p, config, userCanUpload, userCanViewNames);
+          const wrap = document.createElement('div');
+          wrap.innerHTML = html.trim();
+          frag.appendChild(wrap.firstElementChild);
+        }
+        document.getElementById('dash').appendChild(frag);
+
+        equalizeCardHeights();
+      } catch(err){
+        console.error("Render error:", err);
+        $('#dash').html('<p class="text-center text-danger">A rendering error occurred. Please check the console.</p>');
+      }
+    }
+
+    function fetchAndRender(){
+      $.getJSON('/status_json')
+        .done(data=>{
+          const refreshInterval = (data.config && data.config.refresh_interval_sec) ? data.config.refresh_interval_sec*1000 : 30000;
+          render(data);
+          clearTimeout(refreshTimeout);
+          refreshTimeout = setTimeout(fetchAndRender, refreshInterval);
+        })
+        .fail(()=>{
+          $('#dash').html('<p class="text-center text-danger">Failed to fetch printer status. Retrying in 30 seconds…</p>');
+          clearTimeout(refreshTimeout);
+          refreshTimeout = setTimeout(fetchAndRender, 30000);
+        });
+    }
+
+    $(document).ready(function(){
+      initializeTheme();
+      showSkeletonLoaders();
+      fetchAndRender();
+
+      if (OPEN_SIGNUP){
+        const modal = new bootstrap.Modal(document.getElementById('loginModal'));
+        modal.show();
+        const tabBtn = document.querySelector('#signup-tab');
+        if (tabBtn){ new bootstrap.Tab(tabBtn).show(); }
+      }
+
+      // Card click -> Upload (only if allowed & printer accepts)
+      const grid = document.getElementById('dash');
+      const uploadModalEl = document.getElementById('uploadModal');
+      const uploadModal = uploadModalEl ? new bootstrap.Modal(uploadModalEl) : null;
+
+      if (grid && uploadModal){
+        grid.addEventListener('click', function(e){
+          const card = e.target.closest('.printer-card');
+          if (!card) return;
+          if (card.getAttribute('data-accepts') !== '1') return;
+
+          const pn = card.getAttribute('data-printer-name');
+          const modal = document.getElementById('uploadModal');
+          if (!pn || !modal) return;
+
+          modal.querySelector('#modalPrinterName').value = pn;
+          modal.querySelector('.modal-title').textContent = 'Submit Print for ' + pn;
+          uploadModal.show();
+        });
+      }
+    });
+  </script>
+</body>
+</html>

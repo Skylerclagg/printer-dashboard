@@ -6,14 +6,17 @@
   "kiosk_image_page_time": 5,
   "kiosk_images": [
     {
+      "active": true,
       "time": 5,
       "url": "/static/kiosk_images/vault/STEM-Venture-Camp-2.png"
     },
     {
+      "active": true,
       "time": 5,
       "url": "/static/kiosk_images/vault/Makes_Fest_for_screen.jpg"
     },
     {
+      "active": false,
       "time": 5,
       "url": "/static/kiosk_images/vault/MUAMC_Updated_Screensaver.jpg"
     }

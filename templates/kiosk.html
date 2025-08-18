@@ -32,57 +32,64 @@
 <body>
     <div class="kiosk-header"></div>
     <div id="kiosk-container"><h1 style="text-align:center; padding-top: 2rem;">Loading Kiosk...</h1></div>
+
+    <script id="kiosk-data" type="application/json">
+        {{ kiosk_config|tojson|safe }}
+    </script>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         const kioskContainer = document.getElementById('kiosk-container');
         const kioskHeader = document.querySelector('.kiosk-header');
         const kioskId = "{{ kiosk_id }}";
+        const serverKioskConfig = JSON.parse(document.getElementById('kiosk-data').textContent);
+        let globalConfig = {};
+        let globalKioskConfig = serverKioskConfig || {};
         let slides = [];
         let currentSlideIndex = 0;
         let slideTimeout;
         let imageIndex = 0;
-        let globalConfig = {};
-        let globalKioskConfig = {};
+        const statusEndpoint = `/status_json?kiosk=${kioskId}`;
 
         function formatTime(s) {
             if (s === null || s <= 0) return '—';
-            const h = Math.floor(s / 3600),
-                m = Math.floor((s % 3600) / 60);
+            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
             return h > 0 ? `${h}h ${m}m` : `${m}m`;
         }
 
         function createPrinterCardHtml(printerName, printerData) {
             const config = globalConfig;
             let state = printerData.state || 'unknown';
-            const originalState = printerData.state; 
-            if (state === 'Config Error') {
-                state = 'Offline';
-            }
+            const originalState = printerData.state;
+            if (state === 'Config Error') state = 'Offline';
 
             const stateKey = state.toLowerCase().replace(/\s+/g, '-');
-            const progress = printerData.progress != null ? printerData.progress : 0;
+            const progress = (printerData.progress != null) ? printerData.progress : 0;
             const timeRemaining = formatTime(printerData.time_remaining);
             const timeElapsed = formatTime(printerData.time_elapsed);
-            
+
             let nozzleTempStr = '—';
             if (printerData.nozzle_temp !== null) {
                 if (Array.isArray(printerData.nozzle_temp)) {
-                    nozzleTempStr = printerData.nozzle_temp.map((t, i) => `T${i}:${t}°C`).join(' ');
+                    nozzleTempStr = printerData.nozzle_temp.map((t,i)=>`T${i}:${t}°C`).join(' ');
                 } else {
                     nozzleTempStr = printerData.nozzle_temp + '°C';
                 }
             }
 
             const imgSrc = printerData.image_src || `https://via.placeholder.com/400x200/dee2e6/6c757d?text=${printerName}`;
-            const statusColor = config.status_colors[stateKey] || '#6c757d';
+            const statusColor = (config.status_colors && config.status_colors[stateKey]) || '#6c757d';
             const showFile = printerData.show_filename !== false;
-            const filenameHtml = showFile && printerData.filename ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
+            const filenameHtml = showFile && printerData.filename
+                ? `<div class="filename" style="font-size:${config.font_size_filename_px}px;">${printerData.filename}</div>` : '';
 
             let timeHtml = '';
             if (state === 'Printing') {
                 const pb_fs = (config.progress_bar_font_size_px || 12) + 'px';
-                const pb_h = (config.progress_bar_height_px || 14) + 'px';
-                const pb_shadow = config.progress_bar_text_shadow ? '1px 1px 1px rgba(0,0,0,0.5), -1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5), -1px 1px 0 rgba(0,0,0,0.5)' : 'none';
+                const pb_h  = (config.progress_bar_height_px || 14) + 'px';
+                const pb_shadow = config.progress_bar_text_shadow
+                    ? '1px 1px 1px rgba(0,0,0,0.5), -1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5), -1px 1px 0 rgba(0,0,0,0.5)'
+                    : 'none';
                 timeHtml = `
                     <div class="progress-bar" style="height:${pb_h}; margin: 0.75rem 0;">
                         <div class="progress-text" style="color:${config.progress_bar_text_color};font-size:${pb_fs};line-height:${pb_h};text-shadow:${pb_shadow};">${progress}%</div>
@@ -93,26 +100,22 @@
                         <span><strong>Remaining:</strong> ${timeRemaining}</span>
                     </div>`;
             } else {
-                timeHtml = `<div class="progress-bar" style="display: none;"></div><div class="stats-grid" style="display: none;"></div>`;
+                timeHtml = `<div class="progress-bar" style="display:none;"></div><div class="stats-grid" style="display:none;"></div>`;
             }
 
-            let tempsHtml = '';
-            const hideTempsFor = ['Offline', 'Under Maintenance', 'Unsupported', 'Error', 'Config Error'];
-            if (!hideTempsFor.includes(originalState)) {
-                tempsHtml = `
-                    <div class="temps" style="display: flex; font-size:${config.font_size_details_px}px;">
-                        <span><img src="https://api.iconify.design/mdi/heat-bed.svg?color=%23888888" alt="Bed"> ${printerData.bed_temp != null ? printerData.bed_temp + '°C' : '—'}</span>
-                        <span><img src="https://api.iconify.design/mdi/nozzle.svg?color=%23888888" alt="Nozzle"> ${nozzleTempStr}</span>
-                    </div>`;
-            } else {
-                 tempsHtml = `<div class="temps" style="display: none;"></div>`;
-            }
-            
-            let errorHtml = originalState === 'Config Error' ? `<div class="error-message">Error: ${printerData.error}</div>` : '';
+            const hideTempsFor = ['Offline','Under Maintenance','Unsupported','Error','Config Error'];
+            const tempsHtml = !hideTempsFor.includes(originalState) ? `
+                <div class="temps" style="display:flex; font-size:${config.font_size_details_px}px;">
+                    <span><img src="https://api.iconify.design/mdi/heat-bed.svg?color=%23888888" alt="Bed"> ${printerData.bed_temp != null ? printerData.bed_temp + '°C' : '—'}</span>
+                    <span><img src="https://api.iconify.design/mdi/nozzle.svg?color=%23888888" alt="Nozzle"> ${nozzleTempStr}</span>
+                </div>` : `<div class="temps" style="display:none;"></div>`;
+
+            const errorHtml = originalState === 'Config Error' ? `<div class="error-message">Error: ${printerData.error}</div>` : '';
 
             return `
                 <div class="card" data-printer-name="${printerName}">
-                    <img src="${imgSrc}" class="card-img" alt="${printerName}" onerror="this.onerror=null;this.src='https://via.placeholder.com/400x200/dee2e6/6c757d?text=Image+Error';">
+                    <img src="${imgSrc}" class="card-img" alt="${printerName}"
+                         onerror="this.onerror=null;this.src='https://via.placeholder.com/400x200/dee2e6/6c757d?text=Image+Error';">
                     <div class="card-content">
                         <h4 style="font-size:${config.font_size_printer_name_px}px;">${printerName}</h4>
                         ${filenameHtml}
@@ -126,10 +129,11 @@
 
         function buildAndRenderSlides(data) {
             globalConfig = data.config || {};
-            globalKioskConfig = data.kiosk_config || {};
+            globalKioskConfig = data.kiosk_config || globalKioskConfig || {};
+
             document.body.style.backgroundColor = globalKioskConfig.kiosk_background_color || '#000';
             document.documentElement.style.setProperty('--header-img-height', (globalKioskConfig.kiosk_header_height_px || 150) + 'px');
-            
+
             kioskHeader.innerHTML = '';
             if (globalKioskConfig.kiosk_header_image) {
                 kioskHeader.innerHTML = `<img src="${globalKioskConfig.kiosk_header_image}" alt="Header Image">`;
@@ -140,44 +144,47 @@
             const printerData = { ...data };
             delete printerData.config;
             delete printerData.kiosk_config;
+            const printerArray = Object.entries(printerData);
 
-            let printerArray = Object.entries(printerData);
-            
             slides = [];
-            const images = globalKioskConfig.kiosk_images || [];
-            
-            let printerSlides = [];
+            const images = (globalKioskConfig.kiosk_images || []).filter(img => img.active !== false);
+
+            const printerSlides = [];
             if (globalKioskConfig.show_printers && printerArray.length > 0) {
                 if (globalKioskConfig.kiosk_sort_by === 'status') {
                     const statusOrder = globalConfig.status_order || [];
-                    const statusMap = new Map(statusOrder.map((status, index) => [status, index]));
-                    printerArray.sort(([, a], [, b]) => (statusMap.get(a.state) ?? 999) - (statusMap.get(b.state) ?? 999));
+                    const statusMap = new Map(statusOrder.map((s,i)=>[s,i]));
+                    printerArray.sort(([,a],[,b]) => (statusMap.get(a.state) ?? 999) - (statusMap.get(b.state) ?? 999));
                 } else {
                     const printerOrder = globalConfig.printer_order || [];
-                    const printerMap = new Map(printerOrder.map((name, index) => [name, index]));
-                    printerArray.sort(([aName], [bName]) => (printerMap.get(aName) ?? 999) - (printerMap.get(bName) ?? 999));
+                    const printerMap = new Map(printerOrder.map((n,i)=>[n,i]));
+                    printerArray.sort(([aName],[bName]) => (printerMap.get(aName) ?? 999) - (printerMap.get(bName) ?? 999));
                 }
 
-                const printersPerPage = globalKioskConfig.kiosk_printers_per_page || 6;
-                for (let i = 0; i < printerArray.length; i += printersPerPage) {
-                    printerSlides.push({ isImage: false, printers: printerArray.slice(i, i + printersPerPage) });
+                const perPage = globalKioskConfig.kiosk_printers_per_page || 6;
+                for (let i = 0; i < printerArray.length; i += perPage) {
+                    printerSlides.push({ isImage:false, printers: printerArray.slice(i, i + perPage) });
                 }
             }
 
             const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
             const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
-            
+
             for (let i = 0; i < printerSlides.length; i++) {
                 slides.push(printerSlides[i]);
                 if (images.length > 0 && (i + 1) % imageFrequency === 0) {
                     for (let j = 0; j < imagesPerSlot; j++) {
                         const image = images[imageIndex % images.length];
-                        slides.push({ isImage: true, url: image.url, time: image.time });
+                        slides.push({ isImage:true, url:image.url, time:image.time });
                         imageIndex++;
                     }
                 }
             }
-            
+
+            if (printerSlides.length === 0 && images.length > 0) {
+                images.forEach(img => slides.push({ isImage:true, url:img.url, time:img.time }));
+            }
+
             kioskContainer.innerHTML = '';
             if (slides.length === 0) {
                 kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No content to display.</h1>';
@@ -200,49 +207,39 @@
                     else if (slideData.printers.length > 4 && slideData.printers.length <= 6) gridCols = 'repeat(3, 1fr)';
                     else if (slideData.printers.length > 6) gridCols = 'repeat(4, 1fr)';
                     slideDiv.style.gridTemplateColumns = gridCols;
-                    
-                    slideData.printers.forEach(([printerName, pData]) => {
-                        slideDiv.innerHTML += createPrinterCardHtml(printerName, pData);
+
+                    slideData.printers.forEach(([name, pData]) => {
+                        slideDiv.innerHTML += createPrinterCardHtml(name, pData);
                     });
                 }
                 kioskContainer.appendChild(slideDiv);
             });
 
-            if (currentSlideIndex >= slides.length) {
-                currentSlideIndex = 0;
-            }
+            if (currentSlideIndex >= slides.length) currentSlideIndex = 0;
 
-            // Ensure a slide is visible immediately after rebuilding
             showCurrentSlide();
-
-            // Restart the slideshow timer using the current slide's timing
             cycleSlide();
         }
 
         function showCurrentSlide() {
             if (slides.length === 0) return;
 
-            document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
-
-            let current = slides[currentSlideIndex];
-            if (!current) {
+            if (currentSlideIndex >= slides.length) {
                 currentSlideIndex = 0;
-                current = slides[0];
             }
+            
+            const current = slides[currentSlideIndex];
+            if (!current) return;
 
             kioskHeader.style.display = current.isImage ? 'none' : 'flex';
 
-            let slideEl = document.getElementById('slide-' + currentSlideIndex);
-            if (!slideEl) {
-                console.warn(`slide-${currentSlideIndex} not found, falling back to slide-0`);
-                currentSlideIndex = 0;
-                slideEl = document.getElementById('slide-0');
-                if (!slideEl) return;
+            document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
+            const slideEl = document.getElementById('slide-' + currentSlideIndex);
+            if (slideEl) {
+                slideEl.classList.add('active');
             }
-
-            slideEl.classList.add('active');
         }
-        
+
         function cycleSlide() {
             clearTimeout(slideTimeout);
             if (slides.length === 0) return;
@@ -261,13 +258,12 @@
         }
 
         function initialLoad() {
-            $.getJSON(`/status?kiosk=${kioskId}`)
+            $.getJSON(statusEndpoint)
                 .done(data => {
-                    const refreshInterval = (data.config.refresh_interval_sec || 30) * 1000;
                     buildAndRenderSlides(data);
-                    
+                    const refreshInterval = (data.config?.refresh_interval_sec || 30) * 1000;
                     setInterval(() => {
-                        $.getJSON(`/status?kiosk=${kioskId}`).done(buildAndRenderSlides);
+                        $.getJSON(statusEndpoint).done(buildAndRenderSlides);
                     }, refreshInterval);
                 })
                 .fail(() => {
@@ -276,7 +272,7 @@
                 });
         }
 
-        $(document).ready(function(){
+        $(document).ready(function () {
             initialLoad();
         });
     </script>
