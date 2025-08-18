@@ -696,7 +696,7 @@
                 <label class="form-label" for="default_signup_role">Default Role for New Accounts</label>
                 <select class="form-select" id="default_signup_role" name="default_signup_role">
                   {% for role_name, role_data in roles.items() %}
-                    {% if roles.get(session.role, {}).get('level', 0) > role_data.level %}
+                    {% if roles.get(session.role, {}).get('level', 0)|int > role_data.level|int %}
                       <option value="{{ role_name }}" {% if config.default_signup_role == role_name %}selected{% endif %}>{{ role_name }}</option>
                     {% endif %}
                   {% endfor %}
@@ -744,7 +744,7 @@
                                 <td>{{ data.get('email','') }}</td>
                                 <td>{{ data.role }}</td>
                                 <td class="d-flex gap-2 flex-wrap">
-                                  {% if session.role == 'system' or (roles.get(data.role, {}).get('level', 0) < roles.get(session.role, {}).get('level', 0)) %}
+                                  {% if session.role == 'system' or (roles.get(data.role, {}).get('level', 0)|int < roles.get(session.role, {}).get('level', 0)|int) %}
                                     {% if 'edit_user' in user_permissions %}
                                     <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
                                             data-bs-toggle="modal" data-bs-target="#editUserModal"
@@ -814,7 +814,7 @@
                             <label class="form-label">Role</label>
                             <select name="role" class="form-select">
                               {% for role_name, role_data in roles.items() %}
-                                {% if role_data.level < roles.get(session.role, {}).get('level', 0) %}
+                                {% if role_data.level|int < roles.get(session.role, {}).get('level', 0)|int %}
                                   <option value="{{ role_name }}">{{ role_name }}</option>
                                 {% endif %}
                               {% endfor %}
@@ -1119,7 +1119,7 @@
                     <option value="{{ role_name }}">{{ role_name }}</option>
                   {% elif session.role == 'super_user' and role_name != 'system' %}
                     <option value="{{ role_name }}">{{ role_name }}</option>
-                  {% elif role_data.level < roles.get(session.role, {}).get('level', 0) %}
+                  {% elif role_data.level|int < roles.get(session.role, {}).get('level', 0)|int %}
                     <option value="{{ role_name }}">{{ role_name }}</option>
                   {% endif %}
                 {% endfor %}

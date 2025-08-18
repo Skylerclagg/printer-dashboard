@@ -770,7 +770,7 @@ def manage_users():
 def add_user(active_tab):
     users = load_data(USERS_FILE, {})
     roles = load_data(ROLES_FILE, {})
-    logged_in_role_level = roles.get(session.get('role'), {}).get('level', 0)
+    logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
     username = (request.form.get('username') or '').strip()
     password = request.form.get('password')
     role = request.form.get('role')
@@ -792,7 +792,7 @@ def add_user(active_tab):
                 flash('An account with that email already exists.', 'danger')
                 return redirect(url_for('admin', tab=active_tab))
 
-    if roles.get(role, {}).get('level', 999) >= logged_in_role_level and session.get('role') != 'system':
+    if int(roles.get(role, {}).get('level', 999)) >= logged_in_role_level and session.get('role') != 'system':
         flash('You cannot create a user with a role equal to or higher than your own.', 'danger')
     else:
         users[username] = {
@@ -849,9 +849,9 @@ def edit_user(active_tab):
 def delete_user(active_tab):
     users = load_data(USERS_FILE, {})
     roles = load_data(ROLES_FILE, {})
-    logged_in_role_level = roles.get(session.get('role'), {}).get('level', 0)
+    logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
     username_to_delete = request.form.get('username')
-    if username_to_delete in users and roles.get(users[username_to_delete]['role'], {}).get('level', 999) < logged_in_role_level:
+    if username_to_delete in users and int(roles.get(users[username_to_delete]['role'], {}).get('level', 999)) < logged_in_role_level:
         del users[username_to_delete]
         save_data(users, USERS_FILE)
         flash(f"User '{username_to_delete}' deleted.", 'success')
