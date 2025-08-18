@@ -168,8 +168,14 @@
     .filename-line{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size:.9rem;
-      color: var(--text-secondary);
+      color: var(--text-primary);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .filename-line code{
+      color: inherit;
+      background: transparent;
+      padding:0;
     }
 
     /* Status / progress */
