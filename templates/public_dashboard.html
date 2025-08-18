@@ -114,8 +114,11 @@
     /* Cards grid */
     #dash{
       display:grid;
-      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
       gap: 20px;
+      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+    }
+    @media (min-width: 960px){
+      #dash{ grid-template-columns: repeat(3,1fr); }
     }
 
     /* Printer card */
