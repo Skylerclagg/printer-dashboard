@@ -300,7 +300,8 @@ def fetch_prusalink_data(p):
         return {'state': 'Config Error', 'error': 'Missing IP or API Key'}
     try:
         headers = {'X-Api-Key': p['api_key']}
-        resp = requests.get(f"http://{p['ip']}/api/v1/status", headers=headers, timeout=5)
+        base_url = f"http://{p['ip']}/api/v1"
+        resp = requests.get(f"{base_url}/status", headers=headers, timeout=5)
         resp.raise_for_status()
         status = resp.json()
         printer = status.get('printer', {}) or {}
@@ -309,10 +310,31 @@ def fetch_prusalink_data(p):
         file_obj = job_status.get('file', {}) if isinstance(job_status, dict) else {}
         filename = (file_obj.get('display_name') or file_obj.get('name') or
                     job_status.get('file_name') or job_status.get('filename') or file_obj.get('path'))
+
+        # If no filename was returned in the status response, try the dedicated job endpoint
+        if not filename:
+            try:
+                job_resp = requests.get(f"{base_url}/job", headers=headers, timeout=5)
+                job_resp.raise_for_status()
+                job_data = job_resp.json()
+                file_obj2 = job_data.get('file', {}) if isinstance(job_data, dict) else {}
+                filename = (file_obj2.get('display_name') or file_obj2.get('name') or
+                            job_data.get('file_name') or job_data.get('filename') or file_obj2.get('path'))
+            except Exception as e:
+                logging.debug(f"PrusaLink job fetch failed for '{p.get('name')}': {e}")
+
+        prog = job_status.get('progress')
+        if prog is not None:
+            try:
+                prog = float(prog)
+                prog = round(prog * 100, 1) if prog <= 1 else round(prog, 1)
+            except (ValueError, TypeError):
+                prog = None
+
         return {
             'state': state,
             'filename': filename,
-            'progress': int(job_status.get('progress')) if job_status.get('progress') is not None else None,
+            'progress': prog,
             'bed_temp': round(printer.get('temp_bed'), 1) if printer.get('temp_bed') is not None else None,
             'nozzle_temp': round(printer.get('temp_nozzle'), 1) if printer.get('temp_nozzle') is not None else None,
             'time_elapsed': int(job_status.get('time_printing')) if job_status.get('time_printing') is not None else None,
@@ -500,15 +522,30 @@ def status_json():
         config = get_full_config()
         overrides = load_data(OVERRIDES_FILE, {})
         aliases = config.get('status_aliases', {})
+
+        # Determine if current user has permission to view file names
+        roles = load_data(ROLES_FILE, {})
+        user_permissions = []
+        if 'username' in session:
+            user_role = session.get('role', '')
+            user_permissions = roles.get(user_role, {}).get('permissions', [])
+            if '*' in user_permissions:
+                user_permissions = get_available_permissions()
+        can_view_filenames = 'view_file_names' in user_permissions
+
         processed_data = {}
         for name, data in status_data.items():
-            processed_data[name] = data.copy()
+            processed = data.copy()
             if name in overrides and overrides[name].get('status'):
-                processed_data[name]['state'] = overrides[name]['status']
-            original_state = processed_data[name].get('state')
+                processed['state'] = overrides[name]['status']
+            original_state = processed.get('state')
             if original_state in aliases and aliases[original_state]:
-                processed_data[name]['state'] = aliases[original_state]
-        return jsonify({**processed_data, 'config': config})
+                processed['state'] = aliases[original_state]
+            if not can_view_filenames or not processed.get('show_filename', True):
+                processed['filename'] = None
+            processed_data[name] = processed
+
+        return jsonify({**processed_data, 'config': config, 'can_view_filenames': can_view_filenames})
     except Exception as e:
         logging.exception("status_json failed")
         return jsonify({"error": "status_unavailable"}), 500
@@ -528,6 +565,13 @@ def admin():
     user_permissions = roles.get(user_role_name, {}).get('permissions', [])
     if '*' in user_permissions:
         user_permissions = get_available_permissions()
+
+    can_manage_users = any(p in user_permissions for p in [
+        'add_user', 'edit_user', 'delete_user', 'change_user_password', 'change_user_role'
+    ])
+    can_manage_roles = any(p in user_permissions for p in [
+        'add_role', 'edit_role', 'delete_role'
+    ])
 
     # live statuses + all statuses for config UI
     live_statuses = fetch_all(printers)
@@ -604,6 +648,8 @@ def admin():
         permission_labels=permission_labels,
         log_content=log_content,
         user_permissions=user_permissions,
+        can_manage_users=can_manage_users,
+        can_manage_roles=can_manage_roles,
         active_tab=active_tab, selected_kiosk=selected_kiosk,
         pending_jobs=pending_jobs, live_statuses=live_statuses
     )
@@ -724,7 +770,7 @@ def manage_users():
 def add_user(active_tab):
     users = load_data(USERS_FILE, {})
     roles = load_data(ROLES_FILE, {})
-    logged_in_role_level = roles.get(session.get('role'), {}).get('level', 0)
+    logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
     username = (request.form.get('username') or '').strip()
     password = request.form.get('password')
     role = request.form.get('role')
@@ -746,7 +792,7 @@ def add_user(active_tab):
                 flash('An account with that email already exists.', 'danger')
                 return redirect(url_for('admin', tab=active_tab))
 
-    if roles.get(role, {}).get('level', 999) >= logged_in_role_level and session.get('role') != 'system':
+    if int(roles.get(role, {}).get('level', 999)) >= logged_in_role_level and session.get('role') != 'system':
         flash('You cannot create a user with a role equal to or higher than your own.', 'danger')
     else:
         users[username] = {
@@ -803,9 +849,9 @@ def edit_user(active_tab):
 def delete_user(active_tab):
     users = load_data(USERS_FILE, {})
     roles = load_data(ROLES_FILE, {})
-    logged_in_role_level = roles.get(session.get('role'), {}).get('level', 0)
+    logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
     username_to_delete = request.form.get('username')
-    if username_to_delete in users and roles.get(users[username_to_delete]['role'], {}).get('level', 999) < logged_in_role_level:
+    if username_to_delete in users and int(roles.get(users[username_to_delete]['role'], {}).get('level', 999)) < logged_in_role_level:
         del users[username_to_delete]
         save_data(users, USERS_FILE)
         flash(f"User '{username_to_delete}' deleted.", 'success')
@@ -833,8 +879,11 @@ def add_role(active_tab):
     role_name = (request.form.get('role_name') or '').lower().replace(' ', '_')
     permissions = request.form.getlist('permissions')
     level = int(request.form.get('level', 1))
+    user_role_name = session.get('role', '')
+    user_permissions = roles.get(user_role_name, {}).get('permissions', [])
     if role_name and role_name not in roles:
-        roles[role_name] = {'permissions': permissions, 'level': level}
+        allowed_perms = [p for p in permissions if p in user_permissions]
+        roles[role_name] = {'permissions': allowed_perms, 'level': level}
         save_data(roles, ROLES_FILE)
         flash(f"Role '{role_name}' created.", 'success')
     else:
@@ -863,7 +912,17 @@ def edit_role_post(active_tab):
         return redirect(url_for('admin', tab=active_tab))
     permissions = request.form.getlist('permissions')
     level = int(request.form.get('level', 1))
-    roles[role_name]['permissions'] = permissions
+    user_role_name = session.get('role', '')
+    user_permissions = set(roles.get(user_role_name, {}).get('permissions', []))
+    current_perms = set(role_to_edit.get('permissions', []))
+    final_perms = set(current_perms)
+    requested_perms = set(permissions)
+    for perm in user_permissions:
+        if perm in requested_perms:
+            final_perms.add(perm)
+        else:
+            final_perms.discard(perm)
+    roles[role_name]['permissions'] = sorted(final_perms)
     roles[role_name]['level'] = level
     save_data(roles, ROLES_FILE)
     flash(f"Role '{role_name}' updated.", 'success')
@@ -1341,7 +1400,7 @@ def register():
     return redirect(url_for('root'))
 
 # Alias so templates can use url_for('signup')
-@app.route('/signup', methods=['POST'])
+@app.route('/signup', methods=['POST'], endpoint='signup')
 def signup_alias():
     return register()
 
