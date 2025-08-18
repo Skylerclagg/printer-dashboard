@@ -902,7 +902,11 @@
                         <input type="number" name="level" min="1" max="99" value="10" class="form-control" required>
                       </div>
                       <h6>Permissions:</h6>
-                      <div class="permissions-grid">
+                      <div class="mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary me-2" id="add-role-add-all">Add All</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="add-role-remove-all">Remove All</button>
+                      </div>
+                      <div class="permissions-grid" id="add-role-permissions">
                         {% for perm in available_permissions %}
                         <div class="form-check">
                           <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm }}" id="perm_{{ perm }}" {% if perm not in user_permissions %}disabled{% endif %}>
@@ -1264,6 +1268,10 @@
               </div>
               <div class="col-md-9">
                 <label class="form-label d-block">Permissions</label>
+                <div class="mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary me-2" id="edit-role-add-all">Add All</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="edit-role-remove-all">Remove All</button>
+                </div>
                 <div class="permissions-grid" id="edit-role-permissions">
                   {% for perm in available_permissions %}
                   <div class="form-check">
@@ -1466,6 +1474,48 @@
             }
           });
         }
+      }
+
+      /* ====== Edit Role Modal ====== */
+      const editRoleModal = document.getElementById('editRoleModal');
+      if (editRoleModal){
+        editRoleModal.addEventListener('show.bs.modal', function(event){
+          const b = event.relatedTarget;
+          const name = b.dataset.roleName || '';
+          const level = b.dataset.roleLevel || '';
+          const perms = JSON.parse(b.dataset.rolePerms || '[]');
+
+          editRoleModal.querySelector('#editRoleModalLabel').textContent = `Edit Role: ${name}`;
+          editRoleModal.querySelector('#edit-role-name').value = name;
+          editRoleModal.querySelector('#edit-role-level').value = level;
+
+          const permContainer = document.getElementById('edit-role-permissions');
+          if (permContainer){
+            permContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+              cb.checked = perms.includes(cb.value);
+            });
+          }
+        });
+      }
+
+      function togglePerms(container, checked){
+        container.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => { cb.checked = checked; });
+      }
+
+      const addRolePerms = document.getElementById('add-role-permissions');
+      const addRoleAddAll = document.getElementById('add-role-add-all');
+      const addRoleRemoveAll = document.getElementById('add-role-remove-all');
+      if (addRolePerms && addRoleAddAll && addRoleRemoveAll){
+        addRoleAddAll.addEventListener('click', () => togglePerms(addRolePerms, true));
+        addRoleRemoveAll.addEventListener('click', () => togglePerms(addRolePerms, false));
+      }
+
+      const editRolePerms = document.getElementById('edit-role-permissions');
+      const editRoleAddAll = document.getElementById('edit-role-add-all');
+      const editRoleRemoveAll = document.getElementById('edit-role-remove-all');
+      if (editRolePerms && editRoleAddAll && editRoleRemoveAll){
+        editRoleAddAll.addEventListener('click', () => togglePerms(editRolePerms, true));
+        editRoleRemoveAll.addEventListener('click', () => togglePerms(editRolePerms, false));
       }
 
       /* ====== Edit Printer Modal ====== */
