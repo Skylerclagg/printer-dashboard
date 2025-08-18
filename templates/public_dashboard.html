@@ -232,7 +232,7 @@
             Welcome, <strong>{{ session.username }}</strong>
           </button>
           <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-            <li><a class="dropdown-item" href="{{ url_for('account') }}">My Account</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('manage_account') }}">My Account</a></li>
             <li><a class="dropdown-item" href="{{ url_for('admin') }}">Admin Panel</a></li>
             <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
           </ul>
