@@ -317,7 +317,7 @@
             <div class="tab-pane fade {% if open_signup_modal %}show active{% endif %}" id="signup-pane" role="tabpanel">
               {% set errs = signup_errors or {} %}
               {% set vals = signup_values or {} %}
-              <form action="{{ url_for('register') }}" method="POST" novalidate>
+              <form action="{{ url_for('signup') }}" method="POST" novalidate>
                 <div class="mb-3">
                   <label class="form-label">Username</label>
                   <input type="text" name="username" class="form-control {% if errs.get('username') %}is-invalid{% endif %}"

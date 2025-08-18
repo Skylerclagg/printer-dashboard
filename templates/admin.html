@@ -685,19 +685,19 @@
             <h5 class="card-title">Self Sign-up Settings</h5>
             <form action="{{ url_for('manage_config') }}" method="POST" class="row g-3 align-items-end">
               <input type="hidden" name="active_tab" value="user-role">
-              <input type="hidden" name="action" value="update_auth">
+              <input type="hidden" name="action" value="update_signup_settings">
               <div class="col-md-4">
                 <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="allow_signup" name="allow_self_signup" {% if config.allow_self_signup %}checked{% endif %}>
-                  <label class="form-check-label" for="allow_signup">Allow Self Sign-up</label>
+                  <input class="form-check-input" type="checkbox" id="enable_signup" name="enable_self_signup" {% if config.enable_self_signup %}checked{% endif %}>
+                  <label class="form-check-label" for="enable_signup">Allow Self Sign-up</label>
                 </div>
               </div>
               <div class="col-md-4">
-                <label class="form-label" for="default_role">Default Role for New Accounts</label>
-                <select class="form-select" id="default_role" name="default_role">
+                <label class="form-label" for="default_signup_role">Default Role for New Accounts</label>
+                <select class="form-select" id="default_signup_role" name="default_signup_role">
                   {% for role_name, role_data in roles.items() %}
                     {% if roles[session.role].level > role_data.level %}
-                      <option value="{{ role_name }}" {% if config.default_role == role_name %}selected{% endif %}>{{ role_name }}</option>
+                      <option value="{{ role_name }}" {% if config.default_signup_role == role_name %}selected{% endif %}>{{ role_name }}</option>
                     {% endif %}
                   {% endfor %}
                 </select>

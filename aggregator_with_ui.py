@@ -1341,7 +1341,7 @@ def register():
     return redirect(url_for('root'))
 
 # Alias so templates can use url_for('signup')
-@app.route('/signup', methods=['POST'])
+@app.route('/signup', methods=['POST'], endpoint='signup')
 def signup_alias():
     return register()
 
