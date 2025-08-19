@@ -996,6 +996,7 @@ def update_appearance(active_tab):
 def update_kiosk(active_tab):
     kiosk_id = request.form.get('kiosk_id', 'default')
     kiosk_config = get_kiosk_config(kiosk_id)
+    base_config = get_full_config()
     kiosk_specific_dir = os.path.join(app.config['KIOSK_UPLOAD_FOLDER'], kiosk_id)
     os.makedirs(kiosk_specific_dir, exist_ok=True)
     if kiosk_config.get('show_printers'):
@@ -1006,6 +1007,11 @@ def update_kiosk(active_tab):
         kiosk_config['kiosk_sort_by'] = request.form.get('kiosk_sort_by', 'manual')
         kiosk_config['kiosk_title'] = request.form.get('kiosk_title', '')
         kiosk_config['kiosk_header_height_px'] = int(request.form.get('kiosk_header_height_px', 150))
+        kiosk_config['font_size_printer_name_px'] = int(request.form.get('font_size_printer_name_px', base_config.get('font_size_printer_name_px', 20)))
+        kiosk_config['font_size_filename_px'] = int(request.form.get('font_size_filename_px', base_config.get('font_size_filename_px', 14)))
+        kiosk_config['font_size_status_px'] = int(request.form.get('font_size_status_px', base_config.get('font_size_status_px', 12)))
+        kiosk_config['font_size_details_px'] = int(request.form.get('font_size_details_px', base_config.get('font_size_details_px', 14)))
+        kiosk_config['progress_bar_font_size_px'] = int(request.form.get('progress_bar_font_size_px', base_config.get('progress_bar_font_size_px', 12)))
         if 'kiosk_header_image_file' in request.files:
             file = request.files['kiosk_header_image_file']
             if file and file.filename and allowed_file(file.filename):

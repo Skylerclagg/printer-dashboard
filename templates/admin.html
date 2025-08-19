@@ -1029,6 +1029,11 @@
                       <option value="status" {% if kconf.kiosk_sort_by == 'status' %}selected{% endif %}>Status</option>
                     </select>
                   </div>
+                  <div class="col-md-4"><label class="form-label">Printer Name Font Size (px)</label><input type="number" name="font_size_printer_name_px" value="{{ kconf.font_size_printer_name_px | default(config.font_size_printer_name_px | default(20)) }}" class="form-control" min="1"></div>
+                  <div class="col-md-4"><label class="form-label">Filename Font Size (px)</label><input type="number" name="font_size_filename_px" value="{{ kconf.font_size_filename_px | default(config.font_size_filename_px | default(14)) }}" class="form-control" min="1"></div>
+                  <div class="col-md-4"><label class="form-label">Status Font Size (px)</label><input type="number" name="font_size_status_px" value="{{ kconf.font_size_status_px | default(config.font_size_status_px | default(12)) }}" class="form-control" min="1"></div>
+                  <div class="col-md-4"><label class="form-label">Details Font Size (px)</label><input type="number" name="font_size_details_px" value="{{ kconf.font_size_details_px | default(config.font_size_details_px | default(14)) }}" class="form-control" min="1"></div>
+                  <div class="col-md-4"><label class="form-label">Progress Bar Font Size (px)</label><input type="number" name="progress_bar_font_size_px" value="{{ kconf.progress_bar_font_size_px | default(config.progress_bar_font_size_px | default(12)) }}" class="form-control" min="1"></div>
                   <div class="col-md-4"><label class="form-label">Header Height (px)</label><input type="number" name="kiosk_header_height_px" value="{{ kconf.kiosk_header_height_px }}" class="form-control" min="10"></div>
                   <div class="col-md-6"><label class="form-label">Header Title</label><input type="text" name="kiosk_title" value="{{ kconf.kiosk_title }}" class="form-control"></div>
                   <div class="col-md-6"><label class="form-label">Header Image</label><input type="file" name="kiosk_header_image_file" class="form-control" accept="image/*"></div>
