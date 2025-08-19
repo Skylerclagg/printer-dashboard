@@ -1,314 +1,430 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Kiosk View</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; cursor: none; }
-        .kiosk-header { position: fixed; top: 0; left: 0; width: 100%; padding: 10px 20px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; z-index: 10; color: white; }
-        .kiosk-header img { max-height: var(--header-img-height, 150px); margin-right: 20px; }
-        .kiosk-header h1 { margin: 0; font-size: 2.5em; text-shadow: 2px 2px 4px rgba(0,0,0,0.7); }
-        #kiosk-container { width: 100%; height: 100%; position: relative; padding-top: var(--header-height, 0); box-sizing: border-box; }
-        .slide { width: 100%; height: 100%; position: absolute; top: 0; left: 0; opacity: 0; transition: opacity 1s ease-in-out; }
-        .slide.active { opacity: 1; z-index: 1; }
-        .image-slide { background-size: contain; background-position: center; background-repeat: no-repeat; }
-        .printer-slide { display: grid; padding: 2rem; box-sizing: border-box; gap: 1.5rem; align-content: center; }
-        .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; flex-direction: column; overflow: hidden; }
-        .card-img { width: 100%; height: 180px; object-fit: contain; background-color: #e9ecef; }
-        .card-content { padding: 1rem 1.5rem; text-align: center; flex-grow: 1; display: flex; flex-direction: column; }
-        .card h4 { margin: 0 0 0.5rem 0; font-size: 1.25em; color: #0056b3; }
-        .filename { font-size: 0.8em; color: #6c757d; margin-bottom: 0.5rem; word-break: break-all; }
-        .status { display: inline-block; padding: .3rem .8rem; margin: .5rem 0; border-radius: 99px; color: #fff; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .progress-bar { background: #e9ecef; border-radius: 99px; overflow: hidden; position: relative; }
-        .progress-bar .progress-fill { height: 100%; }
-        .progress-text { position: absolute; width: 100%; text-align: center; font-weight: bold; }
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; text-align: left; margin-top: 1rem; }
-        .stats-grid span { font-size: 0.9em; }
-        .temps { display: flex; justify-content: space-around; font-size: 0.9em; margin-top: 1rem; border-top: 1px solid #e9ecef; padding-top: 1rem; flex-wrap: wrap; gap: 8px; }
-        .error-message { font-size: 0.8em; color: #dc3545; margin-top: 0.5rem; }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiosk View</title>
 
-        .printer-card { background: #fff; color: #000; border: 2px solid #dee2e6; border-radius: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
-        .printer-card.dark-mode { background: #343a40; color: #fff; border-color: #454d55; }
-        .printer-card.dark-mode .filename-line,
-        .printer-card.dark-mode .temps .label { color: #adb5bd; }
-        .printer-card.dark-mode .printer-header { border-bottom-color: #454d55; }
-        .printer-card .card-body { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; }
-        .printer-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: .5rem; margin-bottom: .5rem; border-bottom: 1px solid #dee2e6; }
-        .printer-header h3 { font-size: 1.05rem; margin: 0; display: flex; align-items: center; gap: .5rem; }
-        .status-indicator { width: 11px; height: 11px; border-radius: 50%; }
-        .image-slot { position: relative; width: 100%; padding-top: 56%; background: #e9ecef; border-radius: 8px; overflow: hidden; }
-        .printer-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
-        .filename-line { font-size: .85rem; color: #6c757d; word-break: break-all; }
-        .state-row { display: flex; align-items: center; gap: .5rem; }
-        .state-badge { padding: .2rem .6rem; border-radius: .4rem; font-weight: 600; font-size: .8rem; color: #fff; }
-        .progress { height: 14px; border-radius: 0.5rem; overflow: hidden; background: #e9ecef; }
-        .progress-bar { height: 100%; }
-        .temps { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; font-size: .85rem; }
-        .temps .label { color: #6c757d; font-size: .75rem; }
-    </style>
+  <!-- Bootstrap + Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+
+  <meta name="color-scheme" content="light dark">
+
+  <style>
+    :root{
+      --bg:               #f8f9fa;
+      --text:             #212529;
+      --muted:            #6c757d;
+      --card-bg:          #ffffff;
+      --card-border:      #dee2e6;
+      --card-text:        #212529;
+      --progress-track:   #e9ecef;
+      --header-img-height:150px;
+      --header-height:    0px;
+      --kiosk-bg-color:   #000;
+    }
+    :root.dark{
+      --bg:               #0b0d12;
+      --text:             #e9ecef;
+      --muted:            #c6cbd1;
+      --card-bg:          #22262b;
+      --card-border:      #3a4046;
+      --card-text:        #f8f9fa;
+      --progress-track:   #2f343a;
+    }
+
+    html, body{
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      cursor: none;
+      background-color: var(--kiosk-bg-color, var(--bg));
+      color: var(--text);
+    }
+
+    /* Fixed header; no blur */
+    .kiosk-header{
+      position: fixed; top: 0; left: 0; right: 0;
+      width: 100%;
+      padding: 10px 20px;
+      box-sizing: border-box;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 10;
+      color: var(--text);
+      background: transparent;
+    }
+    .kiosk-header img{ max-height: var(--header-img-height); margin-right: 20px; }
+    .kiosk-header h1{ margin: 0; font-size: 2.5em; text-shadow: 2px 2px 4px rgba(0,0,0,.55); }
+
+    /* Slides live below the header */
+    #kiosk-container{
+      position: fixed;
+      top: var(--header-height);
+      left: 0; right: 0; bottom: 0;
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .slide{ position: absolute; inset: 0; opacity: 0; transition: opacity 1s ease-in-out; }
+    .slide.active{ opacity: 1; z-index: 1; }
+
+    .image-slide{
+      background-size: contain;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: 20;
+    }
+
+    .printer-slide{
+      display: grid;
+      padding: 2rem;
+      gap: 1.5rem;
+      align-content: flex-start;
+      box-sizing: border-box;
+    }
+
+    /* Printer cards */
+    .printer-card{
+      background: var(--card-bg);
+      color: var(--card-text);
+      border: 2px solid var(--card-border);
+      border-radius: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      display: flex; flex-direction: column;
+      height: 100%; min-height: 250px;
+    }
+    .printer-card .card-body{ display: flex; flex-direction: column; gap: .5rem; padding: 1rem; }
+    .printer-header{
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: .5rem; margin-bottom: .5rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .printer-header h3{ font-size: 1.05rem; margin: 0; display: flex; align-items: center; gap: .5rem; }
+
+    .status-indicator{ width: 11px; height: 11px; border-radius: 50%; }
+    .status-indicator.ready{ background: #28a745; }
+    .status-indicator.printing{ background: #0d6efd; }
+    .status-indicator.paused{ background: #ffc107; }
+    .status-indicator.service{ background: #17a2b8; }
+    .status-indicator.offline{ background: #dc3545; }
+
+    .image-slot{ height: 180px; display: flex; align-items: center; justify-content: center; }
+    .printer-img{ max-width: 100%; max-height: 100%; object-fit: contain; display: block; border: 0; background: transparent; }
+
+    /* --- Filename line: force normal text color (override Bootstrap <code>) --- */
+    .filename-line{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .85rem; color: var(--card-text); word-break: break-all; }
+    .filename-line code{ color: inherit; background: transparent; }  /* <-- fix */
+    .filename-line i{ color: inherit; }
+
+    .state-row{ display: flex; flex-direction: column; gap: .4rem; }
+    .state-badge{ padding: .2rem .6rem; border-radius: .4rem; font-weight: 700; font-size: .8rem; }
+
+    .progress-bar-container{ position: relative; height: 14px; border-radius: .5rem; overflow: hidden; background: var(--progress-track); }
+    .progress-fill{ height: 100%; }
+
+    /* New: percent BELOW the bar */
+    .progress-percent{
+      margin-top: .35rem;
+      text-align: center;
+      font-weight: 700;
+      font-size: .8rem;
+      color: var(--card-text);
+    }
+
+    .temps{ display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; font-size: .85rem; }
+    .temps .label{ color: var(--muted); font-size: .75rem; }
+    .temps .value{ color: var(--card-text); }
+
+    .printer-card .text-muted{ color: var(--muted) !important; }
+  </style>
 </head>
 <body>
-    <div class="kiosk-header"></div>
-    <div id="kiosk-container"><h1 style="text-align:center; padding-top: 2rem;">Loading Kiosk...</h1></div>
+  <div class="kiosk-header"></div>
+  <div id="kiosk-container">
+    <h1 style="text-align:center; padding-top: 2rem;">Loading Kiosk...</h1>
+  </div>
 
-    <script id="kiosk-data" type="application/json">
-        {{ kiosk_config|tojson|safe }}
-    </script>
+  <script id="kiosk-data" type="application/json">
+    {{ kiosk_config|tojson|safe }}
+  </script>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script>
-        const kioskContainer = document.getElementById('kiosk-container');
-        const kioskHeader = document.querySelector('.kiosk-header');
-        const kioskId = "{{ kiosk_id }}";
-        const serverKioskConfig = JSON.parse(document.getElementById('kiosk-data').textContent);
-        let globalConfig = {};
-        let globalKioskConfig = serverKioskConfig || {};
-        let slides = [];
-        let currentSlideIndex = 0;
-        let slideTimeout;
-        let imageIndex = 0;
-        const statusEndpoint = `/status_json?kiosk=${kioskId}`;
-        function updateHeaderHeight() {
-            document.documentElement.style.setProperty('--header-height', kioskHeader.offsetHeight + 'px');
-        }
-        function colorKey(str){ return String(str || '').toLowerCase().replace(/\s+/g,'_'); }
-        function formatTime(s) {
-            if (s === null || s <= 0) return '—';
-            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-            return h > 0 ? `${h}h ${m}m` : `${m}m`;
-        }
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    const kioskContainer = document.getElementById('kiosk-container');
+    const kioskHeader    = document.querySelector('.kiosk-header');
+    const kioskId        = "{{ kiosk_id }}";
+    const serverKioskConfig = JSON.parse(document.getElementById('kiosk-data').textContent);
 
-        function createPrinterCardHtml(name, p, config, canViewNames) {
-            const state = p.state || 'Unknown';
-            const nozzleTemp = (typeof p.nozzle_temp === 'number') ? p.nozzle_temp.toFixed(1) + '°C' : '—';
-            const bedTemp = (typeof p.bed_temp === 'number') ? p.bed_temp.toFixed(1) + '°C' : '—';
-            const progress = (typeof p.progress === 'number') ? p.progress : null;
-            const imgSrc = p.image_src || `https://via.placeholder.com/400x200/dee2e6/6c757d?text=${name}`;
-            const badgeColor = (config.status_colors && config.status_colors[colorKey(state)]) || '#6c757d';
+    let globalConfig = {};
+    let globalKioskConfig = serverKioskConfig || {};
+    let slides = [];
+    let currentSlideIndex = 0;
+    let slideTimeout;
+    let imageIndex = 0;
+    const statusEndpoint = `/status_json?kiosk=${kioskId}`;
 
-            let filenameHtml = '';
-            if (p.show_filename && canViewNames && p.filename) {
-                filenameHtml = `<div class="filename-line"><i class="bi bi-file-earmark-code"></i> <code>${p.filename}</code></div>`;
-            }
+    function colorKey(str){ return String(str || '').toLowerCase().replace(/\s+/g,'_'); }
+    function aliasState(state, config){ if (!state) return 'Unknown'; const aliases = config.status_aliases || {}; return aliases[state] || state; }
+    function resolveImageSrc(p){
+      const raw = (p.image_src || p.image_url || '').trim();
+      if (!raw) return '';
+      if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('/')) return raw;
+      return '/static/' + raw.replace(/^\/+/, '');
+    }
+    function formatTime(s){ if (s === null || s <= 0) return '—'; const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; }
+    function stateToClass(displayState){
+      if (['Ready','Idle','Operational','Finished'].includes(displayState)) return 'ready';
+      if (displayState === 'Printing') return 'printing';
+      if (displayState === 'Paused') return 'paused';
+      if (['Under Maintenance','Maintenance'].includes(displayState)) return 'service';
+      if (['Offline','Error','Config Error','Unsupported','Unknown'].includes(displayState)) return 'offline';
+      return 'offline';
+    }
+    function idealTextColor(bg){
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(bg || '');
+      if(!m) return '#ffffff';
+      const r = parseInt(m[1],16)/255, g = parseInt(m[2],16)/255, b = parseInt(m[3],16)/255;
+      const lum = 0.2126*Math.pow(r,2.2) + 0.7152*Math.pow(g,2.2) + 0.0722*Math.pow(b,2.2);
+      return lum > 0.5 ? '#000000' : '#ffffff';
+    }
+    function updateHeaderHeight(){
+      const h = kioskHeader.style.display === 'none' ? 0 : (kioskHeader.offsetHeight || 0);
+      document.documentElement.style.setProperty('--header-height', h + 'px');
+    }
+    const headerObserver = new ResizeObserver(updateHeaderHeight);
+    headerObserver.observe(kioskHeader);
 
-            let stateProgressHtml = `
-                <div class="state-row">
-                    <span class="state-badge" style="background:${badgeColor}">${state}</span>
-            `;
-            if ((state === 'Printing' || state === 'Paused') && progress !== null) {
-                const pbColor = config.progress_bar_color || '#007bff';
-                const pbText = config.progress_bar_text_color || '#ffffff';
-                stateProgressHtml += `
-                    <div class="progress" role="progressbar" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100">
-                        <div class="progress-bar" style="width:${progress}%; background:${pbColor}; color:${pbText}">${progress}%</div>
-                    </div>
-                    <div class="d-flex justify-content-between text-muted small">
-                        <span><i class="bi bi-stopwatch"></i> Elapsed: ${formatTime(p.time_elapsed)}</span>
-                        <span><i class="bi bi-hourglass-split"></i> Remaining: ${formatTime(p.time_remaining)}</span>
-                    </div>
-                `;
-            }
-            stateProgressHtml += '</div>';
+    function createPrinterCardHtml(name, p, config, canViewNames){
+      const displayState   = aliasState(p.state || 'Unknown', config);
+      const stateClass     = stateToClass(displayState);
+      const nozzleTemp     = (typeof p.nozzle_temp === 'number') ? p.nozzle_temp.toFixed(1) + '°C' : '—';
+      const bedTemp        = (typeof p.bed_temp === 'number') ? p.bed_temp.toFixed(1) + '°C' : '—';
+      const progressPct    = (typeof p.progress === 'number') ? p.progress.toFixed(1) : null;
+      const imgSrc         = resolveImageSrc(p);
 
-            const tempsHtml = `
-                <div class="temps">
-                    <div>
-                        <div class="label"><i class="bi bi-thermometer-half"></i> Nozzle</div>
-                        <div class="value">${nozzleTemp}</div>
-                    </div>
-                    <div>
-                        <div class="label"><i class="bi bi-hdd-stack"></i> Bed</div>
-                        <div class="value">${bedTemp}</div>
-                    </div>
-                </div>`;
+      let filenameHtml = '';
+      if (p.show_filename && canViewNames && p.filename){
+        filenameHtml = `<div class="filename-line"><i class="bi bi-file-earmark-code"></i> <code>${p.filename}</code></div>`;
+      }
 
-            const cardClass = globalKioskConfig.kiosk_dark_mode ? 'printer-card dark-mode' : 'printer-card';
-            return `
-                <div class="${cardClass}" data-printer-name="${name}" style="border-color:${badgeColor}">
-                    <div class="card-body">
-                        <div class="printer-header">
-                            <h3><span class="status-indicator" style="background:${badgeColor}"></span> ${name}</h3>
-                            <span class="badge bg-secondary">${p.type || 'N/A'}</span>
-                        </div>
-                        <div class="image-slot"><img src="${imgSrc}" alt="Printer image for ${name}" class="printer-img" onerror="this.remove();"></div>
-                        ${filenameHtml}
-                        ${stateProgressHtml}
-                        ${tempsHtml}
-                    </div>
-                </div>`;
-        }
+      const badgeColor        = (config.status_colors && config.status_colors[colorKey(displayState)]) || '#6c757d';
+      const badgeTextColor    = idealTextColor(badgeColor);
+      const progressBarColor  = config.progress_bar_color || '#0d6efd';
+      const progressTextColor = config.progress_bar_text_color || 'var(--card-text)';
 
-        function buildAndRenderSlides(data) {
-            globalConfig = data.config || {};
-            globalKioskConfig = data.kiosk_config || globalKioskConfig || {};
-            const userCanViewNames = data.can_view_filenames !== false;
+      let stateProgressHtml = `
+        <div class="state-row">
+          <span class="state-badge" style="background:${badgeColor}; color:${badgeTextColor}">${displayState}</span>
+      `;
 
-            document.body.style.backgroundColor = globalKioskConfig.kiosk_background_color || '#000';
-            document.documentElement.style.setProperty('--header-img-height', (globalKioskConfig.kiosk_header_height_px || 150) + 'px');
+      if ((displayState === 'Printing' || displayState === 'Paused') && progressPct !== null){
+        stateProgressHtml += `
+          <div class="progress-bar-container" role="progressbar" aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-fill" style="width:${progressPct}%; background:${progressBarColor};"></div>
+          </div>
+          <div class="progress-percent" style="color:${progressTextColor}">${progressPct}%</div>
+          <div class="d-flex justify-content-between text-muted small">
+            <span><i class="bi bi-stopwatch"></i> Elapsed: ${formatTime(p.time_elapsed)}</span>
+            <span><i class="bi bi-hourglass-split"></i> Remaining: ${formatTime(p.time_remaining)}</span>
+          </div>
+        `;
+      }
+      stateProgressHtml += `</div>`;
 
-            kioskHeader.innerHTML = '';
-            if (globalKioskConfig.kiosk_header_image) {
-                kioskHeader.innerHTML = `<img src="${globalKioskConfig.kiosk_header_image}" alt="Header Image">`;
-                const img = kioskHeader.querySelector('img');
-                if (img) {
-                    if (img.complete) {
-                        updateHeaderHeight();
-                    } else {
-                        img.onload = updateHeaderHeight;
-                    }
-                }
-            } else if (globalKioskConfig.kiosk_title) {
-                kioskHeader.innerHTML = `<h1>${globalKioskConfig.kiosk_title}</h1>`;
-                updateHeaderHeight();
-            } else {
-                updateHeaderHeight();
-            }
+      const tempsHtml = `
+        <div class="temps">
+          <div>
+            <div class="label"><i class="bi bi-thermometer-half"></i> Nozzle</div>
+            <div class="value">${nozzleTemp}</div>
+          </div>
+          <div>
+            <div class="label"><i class="bi bi-hdd-stack"></i> Bed</div>
+            <div class="value">${bedTemp}</div>
+          </div>
+        </div>`;
 
-            const printerData = { ...data };
-            delete printerData.config;
-            delete printerData.kiosk_config;
-            delete printerData.can_view_filenames;
-            const printerArray = Object.entries(printerData).filter(([,v]) => v && typeof v === 'object' && 'state' in v);
+      const cardClass = globalKioskConfig.kiosk_dark_mode ? 'printer-card dark-mode' : 'printer-card';
 
-            slides = [];
-            const images = (globalKioskConfig.kiosk_images || []).filter(img => img.active !== false);
+      return `
+        <div class="${cardClass}" data-printer-name="${name}" style="border-color:${badgeColor}">
+          <div class="card-body">
+            <div class="printer-header">
+              <h3><span class="status-indicator ${stateClass}"></span> ${name}</h3>
+              <span class="badge bg-secondary">${p.type || 'N/A'}</span>
+            </div>
+            <div class="image-slot">
+              ${imgSrc ? `<img src="${imgSrc}" alt="Printer image for ${name}" class="printer-img" onerror="this.remove();">` : ''}
+            </div>
+            ${filenameHtml}
+            ${stateProgressHtml}
+            ${tempsHtml}
+          </div>
+        </div>`;
+    }
 
-            const printerSlides = [];
-            if (globalKioskConfig.show_printers && printerArray.length > 0) {
-                if (globalKioskConfig.kiosk_sort_by === 'status') {
-                    const statusOrder = globalConfig.status_order || [];
-                    const statusMap = new Map(statusOrder.map((s,i)=>[s,i]));
-                    printerArray.sort(([,a],[,b]) => (statusMap.get(a.state) ?? 999) - (statusMap.get(b.state) ?? 999));
-                } else {
-                    const printerOrder = globalConfig.printer_order || [];
-                    const printerMap = new Map(printerOrder.map((n,i)=>[n,i]));
-                    printerArray.sort(([aName],[bName]) => (printerMap.get(aName) ?? 999) - (printerMap.get(bName) ?? 999));
-                }
+    function buildAndRenderSlides(data){
+      globalConfig      = data.config || {};
+      globalKioskConfig = data.kiosk_config || globalKioskConfig || {};
+      const userCanViewNames = data.can_view_filenames !== false;
 
-                const perPage = globalKioskConfig.kiosk_printers_per_page || 6;
-                for (let i = 0; i < printerArray.length; i += perPage) {
-                    printerSlides.push({ isImage:false, printers: printerArray.slice(i, i + perPage) });
-                }
-            }
+      document.documentElement.classList.toggle('dark', !!globalKioskConfig.kiosk_dark_mode);
+      document.body.style.backgroundColor = globalKioskConfig.kiosk_background_color || (globalKioskConfig.kiosk_dark_mode ? '#000' : '#fff');
+      document.documentElement.style.setProperty('--header-img-height', ((globalKioskConfig.kiosk_header_height_px || 150) + 'px'));
 
-            const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
-            const imagesPerSlot = globalKioskConfig.kiosk_images_per_slot || 1;
+      kioskHeader.innerHTML = '';
+      if (globalKioskConfig.kiosk_header_image){
+        kioskHeader.innerHTML = `<img src="${globalKioskConfig.kiosk_header_image}" alt="Header Image">`;
+        const img = kioskHeader.querySelector('img');
+        if (img){ img.addEventListener('load', updateHeaderHeight, { once: true }); }
+      }else if(globalKioskConfig.kiosk_title){
+        kioskHeader.innerHTML = `<h1>${globalKioskConfig.kiosk_title}</h1>`;
+      }
+      updateHeaderHeight();
 
-            for (let i = 0; i < printerSlides.length; i++) {
-                slides.push(printerSlides[i]);
-                if (images.length > 0 && (i + 1) % imageFrequency === 0) {
-                    for (let j = 0; j < imagesPerSlot; j++) {
-                        const image = images[imageIndex % images.length];
-                        slides.push({ isImage:true, url:image.url, time:image.time });
-                        imageIndex++;
-                    }
-                }
-            }
+      const printerData = { ...data };
+      delete printerData.config;
+      delete printerData.kiosk_config;
+      delete printerData.can_view_filenames;
 
-            if (printerSlides.length === 0 && images.length > 0) {
-                images.forEach(img => slides.push({ isImage:true, url:img.url, time:img.time }));
-            }
+      const printerArray = Object.entries(printerData).filter(([,v]) => v && typeof v === 'object' && 'state' in v);
 
-            kioskContainer.innerHTML = '';
-            if (slides.length === 0) {
-                kioskContainer.innerHTML = '<h1 style="text-align:center; color: white; padding-top: 2rem;">No content to display.</h1>';
-                return;
-            }
+      slides = [];
+      const images = (globalKioskConfig.kiosk_images || []).filter(img => img.active !== false);
 
-            slides.forEach((slideData, index) => {
-                const slideDiv = document.createElement('div');
-                slideDiv.className = 'slide';
-                slideDiv.id = 'slide-' + index;
-
-                if (slideData.isImage) {
-                    slideDiv.classList.add('image-slide');
-                    slideDiv.style.backgroundImage = `url(${slideData.url})`;
-                } else {
-                    slideDiv.classList.add('printer-slide');
-                    let gridCols = 'repeat(auto-fit, minmax(300px, 1fr))';
-                    if (slideData.printers.length <= 3) gridCols = `repeat(${slideData.printers.length}, 1fr)`;
-                    else if (slideData.printers.length === 4) gridCols = 'repeat(2, 1fr)';
-                    else if (slideData.printers.length > 4 && slideData.printers.length <= 6) gridCols = 'repeat(3, 1fr)';
-                    else if (slideData.printers.length > 6) gridCols = 'repeat(4, 1fr)';
-                    slideDiv.style.gridTemplateColumns = gridCols;
-
-                    slideData.printers.forEach(([name, pData]) => {
-                        slideDiv.innerHTML += createPrinterCardHtml(name, pData, globalConfig, userCanViewNames);
-                    });
-                }
-                kioskContainer.appendChild(slideDiv);
-            });
-
-            if (currentSlideIndex >= slides.length) currentSlideIndex = 0;
-
-            showCurrentSlide();
-            cycleSlide();
+      const printerSlides = [];
+      if (globalKioskConfig.show_printers && printerArray.length > 0){
+        if (globalKioskConfig.kiosk_sort_by === 'status'){
+          const statusOrder = globalConfig.status_order || [];
+          const statusMap = new Map(statusOrder.map((s,i)=>[s,i]));
+          printerArray.sort(([,a],[,b]) =>
+            (statusMap.get(aliasState(a.state, globalConfig)) ?? 999) -
+            (statusMap.get(aliasState(b.state, globalConfig)) ?? 999));
+        }else{
+          const printerOrder = globalConfig.printer_order || [];
+          const printerMap = new Map(printerOrder.map((n,i)=>[n,i]));
+          printerArray.sort(([aName],[bName]) =>
+            (printerMap.get(aName) ?? 999) - (printerMap.get(bName) ?? 999));
         }
 
-        function showCurrentSlide() {
-            if (slides.length === 0) return;
-
-            if (currentSlideIndex >= slides.length) {
-                currentSlideIndex = 0;
-            }
-            
-            const current = slides[currentSlideIndex];
-            if (!current) return;
-
-            if (current.isImage) {
-                kioskHeader.style.display = 'none';
-                document.documentElement.style.setProperty('--header-height', '0px');
-            } else {
-                kioskHeader.style.display = 'flex';
-                updateHeaderHeight();
-            }
-
-            document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
-            const slideEl = document.getElementById('slide-' + currentSlideIndex);
-            if (slideEl) {
-                slideEl.classList.add('active');
-            }
+        const perPage = globalKioskConfig.kiosk_printers_per_page || 6;
+        for (let i = 0; i < printerArray.length; i += perPage){
+          printerSlides.push({ isImage:false, printers: printerArray.slice(i, i + perPage) });
         }
+      }
 
-        function cycleSlide() {
-            clearTimeout(slideTimeout);
-            if (slides.length === 0) return;
+      const imageFrequency = globalKioskConfig.kiosk_image_frequency || 2;
+      const imagesPerSlot  = globalKioskConfig.kiosk_images_per_slot || 1;
 
-            showCurrentSlide();
-
-            if (slides.length <= 1) return;
-
-            const current = slides[currentSlideIndex];
-            const delaySec = current.isImage
-                ? (current.time || globalKioskConfig.kiosk_image_page_time || 5)
-                : (globalKioskConfig.kiosk_printer_page_time || 10);
-
-            currentSlideIndex = (currentSlideIndex + 1) % slides.length;
-            slideTimeout = setTimeout(cycleSlide, delaySec * 1000);
+      for (let i = 0; i < printerSlides.length; i++){
+        slides.push(printerSlides[i]);
+        if (images.length > 0 && (i + 1) % imageFrequency === 0){
+          const count = Math.min(imagesPerSlot, images.length);
+          for (let j = 0; j < count; j++){
+            const image = images[imageIndex % images.length];
+            slides.push({ isImage:true, url:image.url, time:image.time });
+            imageIndex++;
+          }
         }
+      }
+      if (printerSlides.length === 0 && images.length > 0){
+        images.forEach(img => slides.push({ isImage:true, url:img.url, time:img.time }));
+      }
 
-        function initialLoad() {
-            fetch(statusEndpoint, {credentials:'include'})
-                .then(r=>{ if(!r.ok) throw new Error(); return r.json(); })
-                .then(data => {
-                    buildAndRenderSlides(data);
-                    const refreshInterval = (data.config?.refresh_interval_sec || 30) * 1000;
-                    setInterval(() => {
-                        fetch(statusEndpoint, {credentials:'include'}).then(r=>r.json()).then(buildAndRenderSlides);
-                    }, refreshInterval);
-                })
-                .catch(() => {
-                    kioskContainer.innerHTML = '<h1 style="text-align:center; color: red; padding-top: 2rem;">Error fetching status. Retrying...</h1>';
-                    setTimeout(initialLoad, 5000);
-                });
+      kioskContainer.innerHTML = '';
+      if (slides.length === 0){
+        kioskContainer.innerHTML = '<h1 style="text-align:center; color: var(--text); padding-top: 2rem;">No content to display.</h1>';
+        return;
+      }
+
+      slides.forEach((slideData, index) => {
+        const slideDiv = document.createElement('div');
+        slideDiv.className = 'slide';
+        slideDiv.id = 'slide-' + index;
+
+        if (slideData.isImage){
+          slideDiv.classList.add('image-slide');
+          slideDiv.style.backgroundImage = `url(${slideData.url})`;
+        }else{
+          slideDiv.classList.add('printer-slide');
+
+          let gridCols = 'repeat(auto-fit, minmax(300px, 1fr))';
+          const count = slideData.printers.length;
+          if (count <= 3)           gridCols = `repeat(${count}, 1fr)`;
+          else if (count === 4)     gridCols = 'repeat(2, 1fr)';
+          else if (count <= 6)      gridCols = 'repeat(3, 1fr)';
+          else                      gridCols = 'repeat(4, 1fr)';
+          slideDiv.style.gridTemplateColumns = gridCols;
+
+          slideData.printers.forEach(([name, pData]) => {
+            slideDiv.innerHTML += createPrinterCardHtml(name, pData, globalConfig, userCanViewNames);
+          });
         }
+        kioskContainer.appendChild(slideDiv);
+      });
 
-        $(document).ready(function () {
-            initialLoad();
+      if (currentSlideIndex >= slides.length) currentSlideIndex = 0;
+
+      showCurrentSlide();
+      cycleSlide();
+    }
+
+    function showCurrentSlide(){
+      if (slides.length === 0) return;
+      const current = slides[currentSlideIndex];
+      if (!current) return;
+
+      document.querySelectorAll('.slide.active').forEach(el => el.classList.remove('active'));
+      const slideEl = document.getElementById('slide-' + currentSlideIndex);
+
+      if (current.isImage){
+        kioskHeader.style.display = 'none';
+        updateHeaderHeight();
+      }else{
+        kioskHeader.style.display = 'flex';
+        updateHeaderHeight();
+      }
+
+      if (slideEl){ slideEl.classList.add('active'); }
+    }
+
+    function cycleSlide(){
+      clearTimeout(slideTimeout);
+      if (slides.length === 0) return;
+
+      showCurrentSlide();
+      if (slides.length <= 1) return;
+
+      const current = slides[currentSlideIndex];
+      const delaySec = current.isImage
+        ? (current.time || globalKioskConfig.kiosk_image_page_time || 5)
+        : (globalKioskConfig.kiosk_printer_page_time || 10);
+
+      currentSlideIndex = (currentSlideIndex + 1) % slides.length;
+      slideTimeout = setTimeout(cycleSlide, delaySec * 1000);
+    }
+
+    function initialLoad(){
+      fetch(statusEndpoint, { credentials:'include' })
+        .then(r => { if(!r.ok) throw new Error(); return r.json(); })
+        .then(data => {
+          buildAndRenderSlides(data);
+          const refreshInterval = (data.config?.refresh_interval_sec || 30) * 1000;
+          setInterval(() => {
+            fetch(statusEndpoint, { credentials:'include' })
+              .then(r => r.json())
+              .then(buildAndRenderSlides);
+          }, refreshInterval);
+        })
+        .catch(() => {
+          kioskContainer.innerHTML = '<h1 style="text-align:center; color: red; padding-top: 2rem;">Error fetching status. Retrying...</h1>';
+          setTimeout(initialLoad, 5000);
         });
-    </script>
+    }
+
+    window.addEventListener('resize', updateHeaderHeight);
+    $(document).ready(function(){ updateHeaderHeight(); initialLoad(); });
+  </script>
 </body>
 </html>
