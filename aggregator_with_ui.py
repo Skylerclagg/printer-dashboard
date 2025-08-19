@@ -140,7 +140,8 @@ DEFAULT_KIOSK_CONFIG = {
     "name": "Main Kiosk", "kiosk_printers_per_page": 6, "kiosk_printer_page_time": 10,
     "kiosk_image_page_time": 5, "kiosk_image_frequency": 2, "kiosk_images_per_slot": 1,
     "kiosk_images": [], "kiosk_background_color": "#000000", "kiosk_sort_by": "manual",
-    "kiosk_title": "", "kiosk_header_image": "", "kiosk_header_height_px": 150, "show_printers": True
+    "kiosk_title": "", "kiosk_header_image": "", "kiosk_header_height_px": 150,
+    "show_printers": True, "kiosk_dark_mode": False
 }
 
 def get_kiosk_config(kiosk_id='default'):
@@ -547,7 +548,11 @@ def status_json():
                 processed['filename'] = None
             processed_data[name] = processed
 
-        return jsonify({**processed_data, 'config': config, 'can_view_filenames': can_view_filenames})
+        kiosk_id = request.args.get('kiosk')
+        response = {**processed_data, 'config': config, 'can_view_filenames': can_view_filenames}
+        if kiosk_id:
+            response['kiosk_config'] = get_kiosk_config(kiosk_id)
+        return jsonify(response)
     except Exception as e:
         logging.exception("status_json failed")
         return jsonify({"error": "status_unavailable"}), 500
@@ -1009,6 +1014,7 @@ def update_kiosk(active_tab):
                 kiosk_config['kiosk_header_image'] = url_for('static', filename=f"kiosk_images/{kiosk_id}/{filename}")
     kiosk_config['kiosk_image_page_time'] = int(request.form.get('kiosk_image_page_time', 5))
     kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
+    kiosk_config['kiosk_dark_mode'] = 'kiosk_dark_mode' in request.form
     name = request.form.get('kiosk_name')
     if name:
         kiosk_config['name'] = name

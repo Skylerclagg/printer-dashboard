@@ -1025,6 +1025,12 @@
                 <div class="row g-3">
                   <div class="col-md-4"><label class="form-label">Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}" class="form-control"></div>
                   <div class="col-md-4"><label class="form-label">Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}" class="form-control form-control-color"></div>
+                  <div class="col-md-4">
+                    <label class="form-label">Dark Mode Cards</label>
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" name="kiosk_dark_mode" {% if kconf.kiosk_dark_mode %}checked{% endif %}>
+                    </div>
+                  </div>
                   <div class="col-md-4"><label class="form-label">Default Image Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" class="form-control" min="1"></div>
 
                   {% if kconf.show_printers %}
