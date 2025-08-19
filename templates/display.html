@@ -102,14 +102,15 @@
         }
 
         function fetchData() {
-            $.getJSON(`/status_json?kiosk=${kioskId}`)
-                .done(data => {
+            fetch(`/status_json?kiosk=${kioskId}`, {credentials:'include'})
+                .then(r=>{ if(!r.ok) throw new Error(); return r.json(); })
+                .then(data => {
                     if (data.kiosk_config) {
                         data.kiosk_config.kiosk_images = (data.kiosk_config.kiosk_images || []).filter(img => img.active !== false);
                         buildAndRenderSlides(data.kiosk_config);
                     }
                 })
-                .fail(() => {
+                .catch(() => {
                     console.error("Failed to fetch kiosk data update.");
                 });
         }
