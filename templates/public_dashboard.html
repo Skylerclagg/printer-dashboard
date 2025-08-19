@@ -35,6 +35,7 @@
       --shadow-color:rgba(0,0,0,.05);
       --skeleton-bg:#e9ecef;
       --top-bar-color: {{ config.top_bar_color|default('#007bff') }};
+      --title-image-height: {{ config.dashboard_title_image_height|default(40) }}px;
       color-scheme: light;
 
       --bs-body-bg: var(--bg-primary);
@@ -72,8 +73,11 @@
       display:flex; align-items:center; justify-content:space-between;
       gap: 1rem;
     }
+    .top-banner.center-title{justify-content:center;}
+    .top-banner.center-title .navbar-nav{position:absolute; right:30px; top:50%; transform:translateY(-50%);}
+    .top-banner.center-title .title{text-align:center;}
     .title{margin:0; font-size:1.6rem; font-weight:600; white-space:nowrap;}
-    .title-image{max-height:40px;}
+    .title-image{height:var(--title-image-height);}
     .navbar-nav{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;}
     .top-banner .nav-link{color:#fff; text-decoration:none; padding:5px 10px; border:1px solid rgba(255,255,255,.3); border-radius:5px;}
     .top-banner .nav-link:hover{background-color:rgba(255,255,255,.12);}
@@ -225,7 +229,7 @@
   data-user-can-upload="{{ ('upload_gcode' in user_permissions)|tojson }}"
   data-user-can-view-filenames="{{ user_can_view_filenames|tojson }}"
 >
-  <nav class="top-banner">
+  <nav class="top-banner{% if config.dashboard_title_image_position == 'center' %} center-title{% endif %}">
     <div class="title">
       {% if config.dashboard_title_image %}
         <img src="{{ config.dashboard_title_image }}" alt="{{ dashboard_title }}" class="title-image">
@@ -677,15 +681,16 @@
     }
 
     function fetchAndRender(){
-      $.getJSON('/status_json')
-        .done(data=>{
+      fetch('/status_json', {credentials:'include'})
+        .then(r=>{ if(!r.ok) throw new Error(); return r.json(); })
+        .then(data=>{
           const refreshInterval = (data.config && data.config.refresh_interval_sec) ? data.config.refresh_interval_sec*1000 : 30000;
           render(data, firstLoad);
           firstLoad = false;
           clearTimeout(refreshTimeout);
           refreshTimeout = setTimeout(fetchAndRender, refreshInterval);
         })
-        .fail(()=>{
+        .catch(()=>{
           if (firstLoad){
             $('#dash').html('<p class="text-center text-danger">Failed to fetch printer status. Retrying in 30 seconds…</p>');
           }

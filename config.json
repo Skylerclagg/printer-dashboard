@@ -1,0 +1,50 @@
+{
+  "card_size": "medium",
+  "dashboard_title": "Printer Dashboard",
+  "dashboard_title_image": "",
+  "default_signup_role": "member",
+  "enable_self_signup": false,
+  "font_family": "sans-serif",
+  "manual_statuses": [
+    "Ready",
+    "Printing",
+    "Under Maintenance",
+    "Offline"
+  ],
+  "printer_order": [],
+  "progress_bar_color": "#007bff",
+  "progress_bar_text_color": "#ffffff",
+  "refresh_interval_sec": 30,
+  "sort_by": "manual",
+  "status_aliases": {},
+  "status_colors": {
+    "config_error": "#dc3545",
+    "error": "#dc3545",
+    "finished": "#007bff",
+    "idle": "#28a745",
+    "offline": "#6c757d",
+    "operational": "#28a745",
+    "paused": "#6c757d",
+    "printing": "#007bff",
+    "ready": "#28a745",
+    "under_maintenance": "#ffc107",
+    "unsupported": "#6c757d"
+  },
+  "status_order": [
+    "Printing",
+    "Ready",
+    "Finished",
+    "Offline",
+    "Error",
+    "Under Maintenance",
+    "Unsupported"
+  ],
+  "status_summary_items": [
+    "Ready",
+    "Printing",
+    "Maintenance",
+    "Offline",
+    "Total"
+  ],
+  "top_bar_color": "#007bff"
+}

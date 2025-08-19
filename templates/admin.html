@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin Panel</title>
 
-  <!-- Pre-paint theme -->
   <script>
     (function () {
       try {
@@ -189,7 +188,6 @@
       {% endif %}
     {% endwith %}
 
-    <!-- MAIN TABS -->
     <ul class="nav nav-tabs" id="adminTab" role="tablist">
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="printers-tab" data-bs-toggle="tab" data-bs-target="#printers-tab-pane" type="button" role="tab">Printer Config</button>
@@ -227,7 +225,6 @@
     </ul>
 
     <div class="tab-content pt-3" id="adminTabContent">
-      <!-- ========================= PRINTERS ========================= -->
       <div class="tab-pane fade" id="printers-tab-pane" role="tabpanel">
         <div class="card">
           <div class="card-body">
@@ -238,7 +235,6 @@
             </ul>
 
             <div class="tab-content pt-3">
-              <!-- Manage Printers -->
               <div class="tab-pane fade show active" id="manage-printers-pane">
                 <div class="card mb-4">
                   <div class="card-body">
@@ -373,13 +369,11 @@
                   </div>
                 </div>
                 {% endif %}
-              </div><!-- /manage-printers-pane -->
-            </div>
+              </div></div>
           </div>
         </div>
       </div>
 
-      <!-- ========================= APP CONFIG (own main tab) ========================= -->
       <div class="tab-pane fade" id="app-tab-pane" role="tabpanel">
         <div class="card mb-4">
           <div class="card-body">
@@ -398,6 +392,17 @@
                 <div class="col-md-4">
                   <label class="form-label">Upload Title Image</label>
                   <input type="file" name="dashboard_title_image_file" class="form-control" accept="image/*">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Title Image Height (px)</label>
+                  <input type="number" name="dashboard_title_image_height" value="{{ config.dashboard_title_image_height }}" class="form-control" min="10">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Title Image Position</label>
+                  <select name="dashboard_title_image_position" class="form-select">
+                    <option value="left" {% if config.dashboard_title_image_position != 'center' %}selected{% endif %}>Left</option>
+                    <option value="center" {% if config.dashboard_title_image_position == 'center' %}selected{% endif %}>Center</option>
+                  </select>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Top Bar Color</label>
@@ -434,7 +439,6 @@
                   <input type="number" name="refresh_interval_sec" value="{{ config.refresh_interval_sec | default(30) }}" class="form-control" min="5">
                 </div>
 
-                <!-- ===== Status Bar Items: Dual Sortable Lists ===== -->
                 <div class="col-12 status-dual-wrap">
                   {% set alias_map = (config.status_aliases or {}) %}
                   {% set aliased_sources = alias_map.keys() %}
@@ -453,7 +457,6 @@
 
                   <label class="form-label d-block mb-2">Status Bar Items (drag between lists; order on right = display order)</label>
                   <div class="row g-3">
-                    <!-- Available -->
                     <div class="col-md-6">
                       <div class="card">
                         <div class="card-header fw-semibold">Available</div>
@@ -481,7 +484,6 @@
                         </div>
                       </div>
                     </div>
-                    <!-- Enabled & Order -->
                     <div class="col-md-6">
                       <div class="card">
                         <div class="card-header fw-semibold">Enabled &amp; Order</div>
@@ -599,7 +601,6 @@
         </div>
       </div>
 
-      <!-- ========================= APPROVALS ========================= -->
       <div class="tab-pane fade" id="approvals-tab-pane" role="tabpanel">
         <div class="card">
           <div class="card-body">
@@ -678,7 +679,6 @@
         </div>
       </div>
 
-      <!-- ========================= USERS / ROLES ========================= -->
       <div class="tab-pane fade" id="users-tab-pane" role="tabpanel">
         <div class="card mb-4">
           <div class="card-body">
@@ -726,7 +726,6 @@
 
             <div class="tab-content pt-3">
               {% if can_manage_users %}
-              <!-- Users -->
               <div class="tab-pane fade {% if can_manage_users %}show active{% endif %}" id="manage-users-pane">
                 <div class="row">
                   <div class="{{ 'col-lg-7' if 'add_user' in user_permissions else 'col-12' }}">
@@ -743,7 +742,8 @@
                                 <td>{{ data.get('name','') }}</td>
                                 <td>{{ data.get('email','') }}</td>
                                 <td>{{ data.role }}</td>
-                                <td class="d-flex gap-2 flex-wrap">
+                                <td>
+                                  <div class="d-flex gap-2 flex-wrap">
                                   {% if session.role == 'system' or (roles.get(data.role, {}).get('level', 0)|int < roles.get(session.role, {}).get('level', 0)|int) %}
                                     {% if 'edit_user' in user_permissions %}
                                     <button type="button" class="btn btn-sm btn-secondary edit-user-btn"
@@ -776,6 +776,7 @@
                                     </form>
                                     {% endif %}
                                   {% endif %}
+                                  </div>
                                 </td>
                               </tr>
                               {% endfor %}
@@ -832,7 +833,6 @@
               {% endif %}
 
               {% if can_manage_roles %}
-              <!-- Roles -->
               <div class="tab-pane fade {% if not can_manage_users %}show active{% endif %}" id="manage-roles-pane">
                 <div class="card mb-4">
                   <div class="card-body">
@@ -920,14 +920,12 @@
                 </div>
                 {% endif %}
 
-              </div><!-- /roles pane -->
-              {% endif %}
+              </div>{% endif %}
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ========================= KIOSKS ========================= -->
       <div class="tab-pane fade" id="kiosks-tab-pane" role="tabpanel">
         <div class="card mb-4">
           <div class="card-body">
@@ -987,7 +985,6 @@
         </div>
       </div>
 
-      <!-- ========================= KIOSK CONTROL ========================= -->
       <div class="tab-pane fade" id="kiosk-control-tab-pane" role="tabpanel">
         <div class="card">
           <div class="card-body">
@@ -1012,13 +1009,19 @@
                 <div class="row g-3">
                   <div class="col-md-4"><label class="form-label">Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}" class="form-control"></div>
                   <div class="col-md-4"><label class="form-label">Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}" class="form-control form-control-color"></div>
+                  <div class="col-md-4">
+                    <label class="form-label">Dark Mode Cards</label>
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" name="kiosk_dark_mode" {% if kconf.kiosk_dark_mode %}checked{% endif %}>
+                    </div>
+                  </div>
                   <div class="col-md-4"><label class="form-label">Default Image Time (sec)</label><input type="number" name="kiosk_image_page_time" value="{{ kconf.kiosk_image_page_time }}" class="form-control" min="1"></div>
 
                   {% if kconf.show_printers %}
                   <div class="col-md-4"><label class="form-label">Printers per Page</label><input type="number" name="kiosk_printers_per_page" value="{{ kconf.kiosk_printers_per_page }}" class="form-control" min="1"></div>
                   <div class="col-md-4"><label class="form-label">Printer Page Time (sec)</label><input type="number" name="kiosk_printer_page_time" value="{{ kconf.kiosk_printer_page_time }}" class="form-control" min="1"></div>
                   <div class="col-md-4"><label class="form-label">Image Frequency</label><input type="number" name="kiosk_image_frequency" value="{{ kconf.kiosk_image_frequency }}" class="form-control" min="1"></div>
-                  <div class="col-md-4"><label class="form-label">Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kconf.kiosk_images_per_slot }}" class="form-control" min="1"></div>
+                  <div class="col-md-4"><label class="form-label">Images Per Slot</label><input type="number" name="kiosk_images_per_slot" value="{{ kconf.kiosk_images_per_slot }}" class="form-control" min="1" max="{{ kconf.kiosk_images | selectattr('active') | list | length }}"></div>
                   <div class="col-md-4">
                     <label class="form-label">Sort By</label>
                     <select name="kiosk_sort_by" class="form-select">
@@ -1067,7 +1070,6 @@
         </div>
       </div>
 
-      <!-- ========================= LOGS ========================= -->
       <div class="tab-pane fade" id="logs-tab-pane" role="tabpanel">
         <div class="card">
           <div class="card-body">
@@ -1081,13 +1083,7 @@
         </div>
       </div>
 
-    </div><!-- /tab-content -->
-  </div><!-- /container -->
-
-  <!-- ========================= MODALS ========================= -->
-
-  <!-- Edit User Modal -->
-  <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
+    </div></div><div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -1138,7 +1134,6 @@
     </div>
   </div>
 
-  <!-- Change Password Modal -->
   <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
@@ -1176,7 +1171,6 @@
     </div>
   </div>
 
-  <!-- Edit Printer Modal -->
   <div class="modal fade" id="editPrinterModal" tabindex="-1" aria-labelledby="editPrinterModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
       <div class="modal-content">
@@ -1202,7 +1196,6 @@
                 </select>
               </div>
 
-              <!-- PRUSA -->
               <div class="col-md-6 edit-type-prusa">
                 <label class="form-label">IP Address</label>
                 <input type="text" class="form-control" id="edit-printer-ip" name="ip">
@@ -1212,7 +1205,6 @@
                 <input type="text" class="form-control" id="edit-printer-api_key" name="api_key">
               </div>
 
-              <!-- KLIPPER -->
               <div class="col-12 edit-type-klipper">
                 <label class="form-label">Moonraker/Klipper URL</label>
                 <input type="text" class="form-control" id="edit-printer-url" name="url" placeholder="http://klipper.local">
@@ -1248,7 +1240,6 @@
     </div>
   </div>
 
-  <!-- Edit Role Modal -->
   <div class="modal fade" id="editRoleModal" tabindex="-1" aria-labelledby="editRoleModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
       <div class="modal-content">
@@ -1285,7 +1276,7 @@
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
-            <button class="btn btn-primary" type="submit">Save Role</button>
+            <button type="submit" class="btn btn-primary">Save Role</button>
           </div>
         </form>
       </div>
@@ -1343,7 +1334,21 @@
     function displayKioskSettings(kid){
       document.querySelectorAll('.kiosk-settings').forEach(div => div.style.display = 'none');
       const target = document.getElementById('kiosk-settings-' + kid);
-      if (target) target.style.display = 'block';
+      if (target) {
+        target.style.display = 'block';
+        updateMaxImagesPerSlot(target.querySelector('[name="kiosk_images_per_slot"]'));
+      }
+    }
+    
+    function updateMaxImagesPerSlot(inputEl) {
+        if (!inputEl) return;
+        const totalImages = inputEl.getAttribute('max');
+        inputEl.addEventListener('input', () => {
+            const currentValue = parseInt(inputEl.value, 10);
+            if (currentValue > totalImages) {
+                inputEl.value = totalImages;
+            }
+        });
     }
 
     function syncStatusInputs(){
@@ -1555,6 +1560,8 @@
         const typeSel = document.getElementById('edit-printer-type');
         if (typeSel){ typeSel.addEventListener('change', toggleEditTypeFields); }
       }
+      
+      document.querySelectorAll('[name="kiosk_images_per_slot"]').forEach(updateMaxImagesPerSlot);
     });
   </script>
 </body>

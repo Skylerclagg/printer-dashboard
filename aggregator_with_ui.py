@@ -45,7 +45,7 @@ ASSETS_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/assets')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
 ALLOWED_GCODE_EXTENSIONS = {'gcode', 'g', 'gco'}
 CACHE_TTL = 5
-HTTP_PORT = 80
+HTTP_PORT = int(os.environ.get("HTTP_PORT", 80))
 
 # Add 'view_file_names' so we can gate filename visibility
 BASE_PERMISSIONS = [
@@ -68,7 +68,7 @@ def get_available_permissions():
     return BASE_PERMISSIONS + kiosk_perms
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 app.secret_key = 'a-very-secret-and-random-key-that-you-should-change'
 app.config['PRINTER_UPLOAD_FOLDER'] = PRINTER_UPLOAD_FOLDER
 app.config['KIOSK_UPLOAD_FOLDER'] = KIOSK_UPLOAD_FOLDER
@@ -105,6 +105,8 @@ def get_full_config():
     defaults = {
         "dashboard_title": "Printer Dashboard",
         "dashboard_title_image": "",
+        "dashboard_title_image_height": 40,
+        "dashboard_title_image_position": "left",
         "manual_statuses": ["Ready", "Printing", "Under Maintenance", "Offline"],
         "status_colors": {
             "ready": "#28a745", "idle": "#28a745", "operational": "#28a745",
@@ -138,7 +140,8 @@ DEFAULT_KIOSK_CONFIG = {
     "name": "Main Kiosk", "kiosk_printers_per_page": 6, "kiosk_printer_page_time": 10,
     "kiosk_image_page_time": 5, "kiosk_image_frequency": 2, "kiosk_images_per_slot": 1,
     "kiosk_images": [], "kiosk_background_color": "#000000", "kiosk_sort_by": "manual",
-    "kiosk_title": "", "kiosk_header_image": "", "kiosk_header_height_px": 150, "show_printers": True
+    "kiosk_title": "", "kiosk_header_image": "", "kiosk_header_height_px": 150,
+    "show_printers": True, "kiosk_dark_mode": False
 }
 
 def get_kiosk_config(kiosk_id='default'):
@@ -545,7 +548,11 @@ def status_json():
                 processed['filename'] = None
             processed_data[name] = processed
 
-        return jsonify({**processed_data, 'config': config, 'can_view_filenames': can_view_filenames})
+        kiosk_id = request.args.get('kiosk')
+        response = {**processed_data, 'config': config, 'can_view_filenames': can_view_filenames}
+        if kiosk_id:
+            response['kiosk_config'] = get_kiosk_config(kiosk_id)
+        return jsonify(response)
     except Exception as e:
         logging.exception("status_json failed")
         return jsonify({"error": "status_unavailable"}), 500
@@ -961,6 +968,8 @@ def update_appearance(active_tab):
             filename = secure_filename(f"title_logo_{file.filename}")
             file.save(os.path.join(app.config['ASSETS_UPLOAD_FOLDER'], filename))
             config['dashboard_title_image'] = url_for('static', filename=f"assets/{filename}")
+    config['dashboard_title_image_height'] = int(request.form.get('dashboard_title_image_height', config.get('dashboard_title_image_height', 40)))
+    config['dashboard_title_image_position'] = request.form.get('dashboard_title_image_position', config.get('dashboard_title_image_position', 'left'))
     config['card_size'] = request.form.get('card_size', 'medium')
     config['font_family'] = request.form.get('font_family', 'sans-serif')
     config['sort_by'] = request.form.get('sort_by', 'manual')
@@ -1005,6 +1014,7 @@ def update_kiosk(active_tab):
                 kiosk_config['kiosk_header_image'] = url_for('static', filename=f"kiosk_images/{kiosk_id}/{filename}")
     kiosk_config['kiosk_image_page_time'] = int(request.form.get('kiosk_image_page_time', 5))
     kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
+    kiosk_config['kiosk_dark_mode'] = 'kiosk_dark_mode' in request.form
     name = request.form.get('kiosk_name')
     if name:
         kiosk_config['name'] = name
