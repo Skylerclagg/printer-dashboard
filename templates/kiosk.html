@@ -206,7 +206,8 @@
 
       let filenameHtml = '';
       if (p.show_filename && canViewNames && p.filename){
-        filenameHtml = `<div class="filename-line"><i class="bi bi-file-earmark-code"></i> <code>${p.filename}</code></div>`;
+        const fnSize = config.font_size_filename_px || 14;
+        filenameHtml = `<div class="filename-line" style="font-size:${fnSize}px;"><i class="bi bi-file-earmark-code"></i> <code>${p.filename}</code></div>`;
       }
 
       const badgeColor        = (config.status_colors && config.status_colors[colorKey(displayState)]) || '#6c757d';
@@ -214,9 +215,10 @@
       const progressBarColor  = config.progress_bar_color || '#0d6efd';
       const progressTextColor = config.progress_bar_text_color || 'var(--card-text)';
 
+      const statusFont = config.font_size_status_px || 12;
       let stateProgressHtml = `
         <div class="state-row">
-          <span class="state-badge" style="background:${badgeColor}; color:${badgeTextColor}">${displayState}</span>
+          <span class="state-badge" style="background:${badgeColor}; color:${badgeTextColor}; font-size:${statusFont}px;">${displayState}</span>
       `;
 
       if ((displayState === 'Printing' || displayState === 'Paused') && progressPct !== null){
@@ -224,8 +226,8 @@
           <div class="progress-bar-container" role="progressbar" aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100">
             <div class="progress-fill" style="width:${progressPct}%; background:${progressBarColor};"></div>
           </div>
-          <div class="progress-percent" style="color:${progressTextColor}">${progressPct}%</div>
-          <div class="d-flex justify-content-between text-muted small">
+          <div class="progress-percent" style="color:${progressTextColor}; font-size:${config.progress_bar_font_size_px || statusFont}px;">${progressPct}%</div>
+          <div class="d-flex justify-content-between text-muted small" style="font-size:${config.font_size_details_px || 14}px;">
             <span><i class="bi bi-stopwatch"></i> Elapsed: ${formatTime(p.time_elapsed)}</span>
             <span><i class="bi bi-hourglass-split"></i> Remaining: ${formatTime(p.time_remaining)}</span>
           </div>
@@ -234,7 +236,7 @@
       stateProgressHtml += `</div>`;
 
       const tempsHtml = `
-        <div class="temps">
+        <div class="temps" style="font-size:${config.font_size_details_px || 14}px;">
           <div>
             <div class="label"><i class="bi bi-thermometer-half"></i> Nozzle</div>
             <div class="value">${nozzleTemp}</div>
@@ -251,7 +253,7 @@
         <div class="${cardClass}" data-printer-name="${name}" style="border-color:${badgeColor}">
           <div class="card-body">
             <div class="printer-header">
-              <h3><span class="status-indicator ${stateClass}"></span> ${name}</h3>
+              <h3 style="font-size:${config.font_size_printer_name_px || 20}px;"><span class="status-indicator ${stateClass}"></span> ${name}</h3>
               <span class="badge bg-secondary">${p.type || 'N/A'}</span>
             </div>
             <div class="image-slot">
@@ -358,7 +360,8 @@
           slideDiv.style.gridTemplateColumns = gridCols;
 
           slideData.printers.forEach(([name, pData]) => {
-            slideDiv.innerHTML += createPrinterCardHtml(name, pData, globalConfig, userCanViewNames);
+            const mergedConfig = Object.assign({}, globalConfig, globalKioskConfig);
+            slideDiv.innerHTML += createPrinterCardHtml(name, pData, mergedConfig, userCanViewNames);
           });
         }
         kioskContainer.appendChild(slideDiv);
