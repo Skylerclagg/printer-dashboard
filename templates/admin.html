@@ -278,6 +278,9 @@
                                 data-printer-url="{{ printer.get('url','') }}"
                                 data-printer-ip="{{ printer.get('ip','') }}"
                                 data-printer-api_key="{{ printer.get('api_key','') }}"
+                                data-printer-mainboard_id="{{ printer.get('mainboard_id','') }}"
+                                data-printer-mqtt_host="{{ printer.get('mqtt_host','') }}"
+                                data-printer-mqtt_port="{{ printer.get('mqtt_port','') }}"
                                 data-printer-image_url="{{ printer.get('image_url','') }}"
                                 data-printer-image_file="{{ printer.get('local_image_filename','') }}"
                                 data-printer-show_filename="{{ printer.get('show_filename', true)|tojson }}"
@@ -322,6 +325,7 @@
                           <select name="type" id="add-printer-type" class="form-select">
                             <option value="prusa">Prusa</option>
                             <option value="klipper">Klipper</option>
+                            <option value="centauri">Centauri Carbon</option>
                           </select>
                         </div>
                       </div>
@@ -341,6 +345,25 @@
                         <div class="col-12">
                           <label class="form-label">Moonraker/Klipper URL</label>
                           <input type="text" name="url" class="form-control" placeholder="http://klipper.local">
+                        </div>
+                      </div>
+
+                      <div id="centauri-fields" class="row g-3 mt-1 type-specific-fields" style="display:none;">
+                        <div class="col-md-6">
+                          <label class="form-label">IP Address</label>
+                          <input type="text" name="ip" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label">Mainboard ID</label>
+                          <input type="text" name="mainboard_id" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label">MQTT Host (Optional)</label>
+                          <input type="text" name="mqtt_host" class="form-control" placeholder="defaults to IP">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label">MQTT Port (Optional)</label>
+                          <input type="number" name="mqtt_port" class="form-control" placeholder="1883">
                         </div>
                       </div>
 
@@ -1198,10 +1221,11 @@
                 <select name="type" id="edit-printer-type" class="form-select">
                   <option value="prusa">Prusa</option>
                   <option value="klipper">Klipper</option>
+                  <option value="centauri">Centauri Carbon</option>
                 </select>
               </div>
 
-              <div class="col-md-6 edit-type-prusa">
+              <div class="col-md-6 edit-type-prusa edit-type-centauri">
                 <label class="form-label">IP Address</label>
                 <input type="text" class="form-control" id="edit-printer-ip" name="ip">
               </div>
@@ -1213,6 +1237,19 @@
               <div class="col-12 edit-type-klipper">
                 <label class="form-label">Moonraker/Klipper URL</label>
                 <input type="text" class="form-control" id="edit-printer-url" name="url" placeholder="http://klipper.local">
+              </div>
+
+              <div class="col-md-6 edit-type-centauri">
+                <label class="form-label">Mainboard ID</label>
+                <input type="text" class="form-control" id="edit-printer-mainboard_id" name="mainboard_id">
+              </div>
+              <div class="col-md-6 edit-type-centauri">
+                <label class="form-label">MQTT Host (Optional)</label>
+                <input type="text" class="form-control" id="edit-printer-mqtt_host" name="mqtt_host" placeholder="defaults to IP">
+              </div>
+              <div class="col-md-6 edit-type-centauri">
+                <label class="form-label">MQTT Port (Optional)</label>
+                <input type="number" class="form-control" id="edit-printer-mqtt_port" name="mqtt_port" placeholder="1883">
               </div>
 
               <div class="col-md-6">
@@ -1335,6 +1372,7 @@
       const type = document.getElementById('add-printer-type').value;
       document.getElementById('prusa-fields').style.display   = (type === 'prusa')  ? 'flex' : 'none';
       document.getElementById('klipper-fields').style.display = (type === 'klipper')? 'flex' : 'none';
+      document.getElementById('centauri-fields').style.display = (type === 'centauri')? 'flex' : 'none';
     }
     function displayKioskSettings(kid){
       document.querySelectorAll('.kiosk-settings').forEach(div => div.style.display = 'none');
@@ -1534,6 +1572,7 @@
         const type = document.getElementById('edit-printer-type').value;
         document.querySelectorAll('.edit-type-prusa').forEach(el => el.style.display = (type === 'prusa')? '' : 'none');
         document.querySelectorAll('.edit-type-klipper').forEach(el => el.style.display = (type === 'klipper')? '' : 'none');
+        document.querySelectorAll('.edit-type-centauri').forEach(el => el.style.display = (type === 'centauri')? '' : 'none');
       }
       if (editPrinterModal){
         editPrinterModal.addEventListener('show.bs.modal', function(event){
@@ -1543,6 +1582,9 @@
           const url  = b.dataset.printerUrl || '';
           const ip   = b.dataset.printerIp || '';
           const key  = b.dataset.printerApi_key || '';
+          const mbid = b.dataset.printerMainboard_id || '';
+          const mhost = b.dataset.printerMqtt_host || '';
+          const mport = b.dataset.printerMqtt_port || '';
           const imgU = b.dataset.printerImage_url || '';
           const showFilename = (b.dataset.printerShow_filename === 'true');
           const acceptsUploads = (b.dataset.printerAccepts_uploads === 'true');
@@ -1553,6 +1595,9 @@
           editPrinterModal.querySelector('#edit-printer-url').value = url;
           editPrinterModal.querySelector('#edit-printer-ip').value = ip;
           editPrinterModal.querySelector('#edit-printer-api_key').value = key;
+          editPrinterModal.querySelector('#edit-printer-mainboard_id').value = mbid;
+          editPrinterModal.querySelector('#edit-printer-mqtt_host').value = mhost;
+          editPrinterModal.querySelector('#edit-printer-mqtt_port').value = mport;
           editPrinterModal.querySelector('#edit-printer-image_url').value = imgU;
           editPrinterModal.querySelector('#edit-printer-show_filename').checked = showFilename;
           editPrinterModal.querySelector('#edit-printer-accepts_uploads').checked = acceptsUploads;

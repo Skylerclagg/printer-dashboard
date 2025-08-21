@@ -18,6 +18,7 @@ import requests
 import logging
 import shutil
 import datetime
+import uuid
 from flask import (
     Flask, jsonify, request, redirect, url_for, render_template,
     session, flash, Response
@@ -267,6 +268,78 @@ def stop_prusa_print(printer_config):
         logging.error(f"Prusa stop failed for '{printer_config['name']}': {e}")
         return False, f"Failed to stop print: {e}"
 
+def start_centauri_print(printer_config, gcode_filename):
+    if not printer_config.get('ip') or not printer_config.get('mainboard_id'):
+        return False, "Printer IP or Mainboard ID is not configured."
+    try:
+        gcode_path = os.path.join(app.config['GCODE_UPLOAD_FOLDER'], gcode_filename)
+        with open(gcode_path, 'rb') as f:
+            files = {'file': (gcode_filename, f, 'application/octet-stream')}
+            upload_url = f"http://{printer_config['ip']}:3030/uploadFile/upload"
+            response = requests.post(upload_url, files=files, timeout=30)
+            response.raise_for_status()
+    except Exception as e:
+        logging.error(f"Centauri upload failed for '{printer_config['name']}': {e}")
+        return False, f"File upload failed: {e}"
+    try:
+        import paho.mqtt.client as mqtt
+        host = printer_config.get('mqtt_host', printer_config['ip'])
+        port = int(printer_config.get('mqtt_port', 1883))
+        client = mqtt.Client()
+        client.connect(host, port, 60)
+        mainboard = printer_config['mainboard_id']
+        topic = f"sdcp/request/{mainboard}"
+        payload = {
+            "Id": str(uuid.uuid4()),
+            "Data": {
+                "Cmd": 128,
+                "Data": {"Filename": gcode_filename, "StartLayer": 0},
+                "RequestID": str(uuid.uuid4()),
+                "MainboardID": mainboard,
+                "TimeStamp": int(time.time()),
+                "From": 0,
+            },
+            "Topic": topic,
+        }
+        client.publish(topic, json.dumps(payload))
+        client.disconnect()
+        logging.info(f"Started print '{gcode_filename}' on Centauri Carbon '{printer_config['name']}'.")
+        return True, "Print started successfully."
+    except Exception as e:
+        logging.error(f"Centauri start print failed for '{printer_config['name']}': {e}")
+        return False, f"Failed to start print: {e}"
+
+def stop_centauri_print(printer_config):
+    if not printer_config.get('mainboard_id'):
+        return False, "Mainboard ID is not configured."
+    try:
+        import paho.mqtt.client as mqtt
+        host = printer_config.get('mqtt_host', printer_config.get('ip'))
+        port = int(printer_config.get('mqtt_port', 1883))
+        client = mqtt.Client()
+        client.connect(host, port, 60)
+        mainboard = printer_config['mainboard_id']
+        topic = f"sdcp/request/{mainboard}"
+        payload = {
+            "Id": str(uuid.uuid4()),
+            "Data": {
+                "Cmd": 130,
+                "Data": {},
+                "RequestID": str(uuid.uuid4()),
+                "MainboardID": mainboard,
+                "TimeStamp": int(time.time()),
+                "From": 0,
+            },
+            "Topic": topic,
+        }
+        client.publish(topic, json.dumps(payload))
+        client.disconnect()
+        logging.info(f"Stopped print on Centauri Carbon '{printer_config['name']}'.")
+        return True, "Print stopped successfully."
+    except Exception as e:
+        logging.error(f"Centauri stop print failed for '{printer_config['name']}': {e}")
+        return False, f"Failed to stop print: {e}"
+
 # --- FETCHERS --------------------------------------------------------------
 def fetch_klipper_data(p):
     if not p.get('url'):
@@ -347,12 +420,87 @@ def fetch_prusalink_data(p):
         logging.error(f"PrusaLink fetch for '{p.get('name')}': {e}")
         return {'state': 'Offline', 'error': str(e)}
 
+def fetch_centauri_data(p):
+    host = p.get('mqtt_host', p.get('ip'))
+    mainboard = p.get('mainboard_id')
+    if not host or not mainboard:
+        return {'state': 'Config Error', 'error': 'Missing MQTT host or Mainboard ID'}
+    try:
+        import paho.mqtt.client as mqtt
+
+        topic_status = f"sdcp/status/{mainboard}"
+        topic_request = f"sdcp/request/{mainboard}"
+        result = {}
+
+        def on_message(client, userdata, msg):
+            try:
+                data = json.loads(msg.payload.decode())
+                status = data.get('Status', {})
+                current = status.get('CurrentStatus')
+                if isinstance(current, list):
+                    current = current[0] if current else None
+                state_map = {
+                    0: 'Ready',
+                    1: 'Printing',
+                    2: 'File Transferring',
+                    3: 'Calibrating',
+                    4: 'Device Testing'
+                }
+                result['state'] = state_map.get(current, 'Unknown')
+                task = status.get('TaskDetail', {})
+                result['filename'] = task.get('Filename') or task.get('TaskName')
+                total = task.get('AllTotalLayer')
+                cur = task.get('CurLayer')
+                if total and cur is not None:
+                    try:
+                        result['progress'] = round(float(cur) / float(total) * 100, 1)
+                    except Exception:
+                        result['progress'] = None
+                else:
+                    result['progress'] = None
+            except Exception as e:
+                result['state'] = 'Offline'
+                result['error'] = str(e)
+
+        client = mqtt.Client()
+        port = int(p.get('mqtt_port', 1883))
+        client.on_message = on_message
+        client.connect(host, port, 60)
+        client.subscribe(topic_status)
+        payload = {
+            "Id": str(uuid.uuid4()),
+            "Data": {
+                "Cmd": 0,
+                "Data": {},
+                "RequestID": str(uuid.uuid4()),
+                "MainboardID": mainboard,
+                "TimeStamp": int(time.time()),
+                "From": 0,
+            },
+            "Topic": topic_request,
+        }
+        client.publish(topic_request, json.dumps(payload))
+        client.loop_start()
+        start = time.time()
+        while 'state' not in result and time.time() - start < 3:
+            time.sleep(0.1)
+        client.loop_stop()
+        client.disconnect()
+        if not result:
+            return {'state': 'Offline', 'error': 'No status response'}
+        return result
+    except Exception as e:
+        logging.error(f"Centauri fetch for '{p.get('name')}': {e}")
+        return {'state': 'Offline', 'error': str(e)}
+
 def fetch_printer(p):
     ptype = p.get('type')
     if ptype == 'klipper':
         return fetch_klipper_data(p)
     if ptype == 'prusa':
         return fetch_prusalink_data(p)
+    if ptype == 'centauri':
+        return fetch_centauri_data(p)
     return {'state': 'Config Error', 'error': f"Unknown type '{ptype}'"}
 
 def get_image_src(printer_config):
@@ -679,9 +827,14 @@ def manage_printers():
 def add_printer(active_tab):
     printers = load_data(PRINTERS_FILE, [])
     new_printer = {k: request.form.get(k) for k in
-                   ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
+                   ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads', 'mainboard_id', 'mqtt_host', 'mqtt_port']}
     new_printer['show_filename'] = 'show_filename' in request.form
     new_printer['accepts_uploads'] = 'accepts_uploads' in request.form
+    if new_printer.get('mqtt_port'):
+        try:
+            new_printer['mqtt_port'] = int(new_printer['mqtt_port'])
+        except ValueError:
+            new_printer['mqtt_port'] = ''
     if 'image_file' in request.files:
         file = request.files['image_file']
         if file and file.filename and allowed_file(file.filename):
@@ -721,10 +874,15 @@ def edit_printer_modal(active_tab):
 
     updated_data = printer_to_edit.copy()
     form_data = {k: request.form.get(k) for k in
-                 ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads']}
+                 ['name', 'type', 'url', 'ip', 'api_key', 'access_code', 'serial', 'image_url', 'toolheads', 'mainboard_id', 'mqtt_host', 'mqtt_port']}
     updated_data.update(form_data)
     updated_data['show_filename'] = 'show_filename' in request.form
     updated_data['accepts_uploads'] = 'accepts_uploads' in request.form
+    if updated_data.get('mqtt_port'):
+        try:
+            updated_data['mqtt_port'] = int(updated_data['mqtt_port'])
+        except ValueError:
+            updated_data['mqtt_port'] = ''
     if 'image_file' in request.files:
         file = request.files['image_file']
         if file and file.filename and allowed_file(file.filename):
@@ -1270,6 +1428,8 @@ def handle_approval():
             success, message = start_klipper_print(printer_config, target_job['gcode_filename'])
         elif printer_config['type'] == 'prusa':
             success, message = start_prusa_print(printer_config, target_job['gcode_filename'])
+        elif printer_config['type'] == 'centauri':
+            success, message = start_centauri_print(printer_config, target_job['gcode_filename'])
         if success:
             target_job['status'] = 'approved'
             target_job['approved_by'] = session.get('username')
@@ -1301,6 +1461,8 @@ def admin_stop_print():
         ok, msg = stop_klipper_print(printer_config)
     elif printer_config['type'] == 'prusa':
         ok, msg = stop_prusa_print(printer_config)
+    elif printer_config['type'] == 'centauri':
+        ok, msg = stop_centauri_print(printer_config)
     else:
         ok, msg = False, 'Unknown printer type'
     if ok:
