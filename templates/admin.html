@@ -349,6 +349,11 @@
                       </div>
 
                       <div id="centauri-fields" class="row g-3 mt-1 type-specific-fields" style="display:none;">
+                        <div class="col-12">
+                          <span class="text-muted" data-bs-toggle="tooltip" title="Use the printer's web interface: IP is under Network settings, Mainboard ID under About. MQTT host defaults to that IP and port 1883.">
+                            <i class="bi bi-question-circle-fill"></i> Where to find these values?
+                          </span>
+                        </div>
                         <div class="col-md-6">
                           <label class="form-label">IP Address</label>
                           <input type="text" name="ip" class="form-control">
@@ -1225,6 +1230,12 @@
                 </select>
               </div>
 
+              <div class="col-12 edit-type-centauri">
+                <span class="text-muted" data-bs-toggle="tooltip" title="Use the printer's web interface: IP is under Network settings, Mainboard ID under About. MQTT host defaults to that IP and port 1883.">
+                  <i class="bi bi-question-circle-fill"></i> Where to find these values?
+                </span>
+              </div>
+
               <div class="col-md-6 edit-type-prusa edit-type-centauri">
                 <label class="form-label">IP Address</label>
                 <input type="text" class="form-control" id="edit-printer-ip" name="ip">
@@ -1402,6 +1413,10 @@
     document.addEventListener('DOMContentLoaded', function(){
       initializeTheme();
       setupLogAutoscroll();
+
+      document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+        new bootstrap.Tooltip(el);
+      });
 
       // Deep-link tab by ?tab=...
       const urlParams = new URLSearchParams(window.location.search);
