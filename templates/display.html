@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="font-size: {{ kiosk_config.kiosk_font_size|default(100) }}%">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -43,6 +43,7 @@
                 }
             }
 
+            document.documentElement.style.fontSize = (kioskConfig.kiosk_font_size || 100) + '%';
             document.body.style.backgroundColor = kioskConfig.kiosk_background_color || '#000';
             
             slides = kioskConfig.kiosk_images || [];

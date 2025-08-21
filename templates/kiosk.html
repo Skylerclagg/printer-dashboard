@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="font-size: {{ kiosk_config.kiosk_font_size|default(100) }}%">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -270,6 +270,7 @@
       const userCanViewNames = data.can_view_filenames !== false;
 
       document.documentElement.classList.toggle('dark', !!globalKioskConfig.kiosk_dark_mode);
+      document.documentElement.style.fontSize = (globalKioskConfig.kiosk_font_size || 100) + '%';
       document.body.style.backgroundColor = globalKioskConfig.kiosk_background_color || (globalKioskConfig.kiosk_dark_mode ? '#000' : '#fff');
       document.documentElement.style.setProperty('--header-img-height', ((globalKioskConfig.kiosk_header_height_px || 150) + 'px'));
 

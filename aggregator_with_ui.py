@@ -18,6 +18,7 @@ import requests
 import logging
 import shutil
 import datetime
+from urllib.parse import urlparse
 from flask import (
     Flask, jsonify, request, redirect, url_for, render_template,
     session, flash, Response
@@ -141,7 +142,7 @@ DEFAULT_KIOSK_CONFIG = {
     "kiosk_image_page_time": 5, "kiosk_image_frequency": 2, "kiosk_images_per_slot": 1,
     "kiosk_images": [], "kiosk_background_color": "#000000", "kiosk_sort_by": "manual",
     "kiosk_title": "", "kiosk_header_image": "", "kiosk_header_height_px": 150,
-    "show_printers": True, "kiosk_dark_mode": False
+    "show_printers": True, "kiosk_dark_mode": False, "kiosk_font_size": 100
 }
 
 def get_kiosk_config(kiosk_id='default'):
@@ -888,6 +889,8 @@ def add_role(active_tab):
     level = int(request.form.get('level', 1))
     user_role_name = session.get('role', '')
     user_permissions = roles.get(user_role_name, {}).get('permissions', [])
+    if '*' in user_permissions:
+        user_permissions = get_available_permissions()
     if role_name and role_name not in roles:
         allowed_perms = [p for p in permissions if p in user_permissions]
         roles[role_name] = {'permissions': allowed_perms, 'level': level}
@@ -921,6 +924,8 @@ def edit_role_post(active_tab):
     level = int(request.form.get('level', 1))
     user_role_name = session.get('role', '')
     user_permissions = set(roles.get(user_role_name, {}).get('permissions', []))
+    if '*' in user_permissions:
+        user_permissions = set(get_available_permissions())
     current_perms = set(role_to_edit.get('permissions', []))
     final_perms = set(current_perms)
     requested_perms = set(permissions)
@@ -1014,6 +1019,7 @@ def update_kiosk(active_tab):
                 kiosk_config['kiosk_header_image'] = url_for('static', filename=f"kiosk_images/{kiosk_id}/{filename}")
     kiosk_config['kiosk_image_page_time'] = int(request.form.get('kiosk_image_page_time', 5))
     kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
+    kiosk_config['kiosk_font_size'] = int(request.form.get('kiosk_font_size', 100))
     kiosk_config['kiosk_dark_mode'] = 'kiosk_dark_mode' in request.form
     name = request.form.get('kiosk_name')
     if name:
@@ -1106,9 +1112,12 @@ def manage_kiosk_images():
     image_urls = request.form.getlist('url')
     image_times = request.form.getlist('time')
     image_actives = set(request.form.getlist('active'))
+    delete_urls = set(request.form.getlist('delete_url'))
 
     for i in range(len(image_urls)):
         url = image_urls[i]
+        if url in delete_urls:
+            continue
         new_kiosk_images.append({
             'url': url,
             'time': int(image_times[i]),
@@ -1129,6 +1138,16 @@ def manage_kiosk_images():
                     kiosk_config['kiosk_images'].append({'url': image_url, 'time': default_time, 'active': True})
 
     save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+
+    for del_url in delete_urls:
+        filename = os.path.basename(urlparse(del_url).path)
+        file_path = os.path.join(kiosk_specific_dir, filename)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError:
+            logging.warning(f"Failed to delete kiosk image {file_path}")
+
     flash(f"Kiosk '{kiosk_id}' images updated.", 'success')
     return redirect(url_for('admin', tab='kiosk-control', kiosk=kiosk_id))
 

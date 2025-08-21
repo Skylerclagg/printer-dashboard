@@ -1,5 +1,6 @@
 {
   "kiosk_background_color": "#6c757d",
+  "kiosk_font_size": 100,
   "kiosk_header_height_px": 300,
   "kiosk_header_image": "/static/kiosk_images/vault/header_header_Printer_Status_1.png",
   "kiosk_image_frequency": 1,
