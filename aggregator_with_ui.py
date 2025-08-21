@@ -434,7 +434,59 @@ def fetch_bambu_data(p):
         return {'state': 'Offline', 'error': str(e)}
 
 def fetch_centauri_data(p):
-    return fetch_klipper_data(p)
+    base = p.get('url') or (f"http://{p['ip']}" if p.get('ip') else None)
+    if not base:
+        return {'state': 'Config Error', 'error': 'Missing URL or IP'}
+
+    headers = {}
+    if p.get('access_code'):
+        headers['X-Access-Code'] = p['access_code']
+
+    # Try Elegoo's JSON status endpoint first
+    try:
+        resp = requests.get(f"{base}/api/v1/status", headers=headers, timeout=5)
+        if resp.status_code != 404:
+            resp.raise_for_status()
+            status = resp.json()
+            return {
+                'state': (status.get('state') or 'unknown').title(),
+                'filename': status.get('file'),
+                'progress': status.get('progress'),
+                'bed_temp': status.get('bed_temp'),
+                'nozzle_temp': status.get('nozzle_temp'),
+                'time_elapsed': status.get('time_elapsed'),
+                'time_remaining': status.get('time_remaining')
+            }
+    except Exception as e:
+        logging.debug(f"Centauri JSON status fetch failed for '{p.get('name')}': {e}")
+
+    # Fallback to standard Klipper/Moonraker endpoints
+    try:
+        r = requests.get(
+            f"{base}/printer/objects/query?print_stats&display_status&heater_bed&extruder&virtual_sdcard",
+            timeout=5
+        )
+        r.raise_for_status()
+        res = r.json()['result']['status']
+        print_stats = res.get('print_stats', {})
+        state = (print_stats.get('state', 'unknown') or 'unknown').title()
+        filename = print_stats.get('filename')
+        prog = res.get('virtual_sdcard', {}).get('progress')
+        time_elapsed = print_stats.get('print_duration')
+        file_progress = res.get('virtual_sdcard', {}).get('progress', 0)
+        time_remaining = (time_elapsed / file_progress - time_elapsed) if file_progress > 0 and time_elapsed else None
+        return {
+            'state': state,
+            'filename': filename,
+            'progress': round(prog * 100, 1) if prog else None,
+            'bed_temp': round(res.get('heater_bed', {}).get('temperature', 0), 1),
+            'nozzle_temp': round(res.get('extruder', {}).get('temperature', 0), 1),
+            'time_elapsed': int(time_elapsed) if time_elapsed else None,
+            'time_remaining': int(time_remaining) if time_remaining and time_remaining > 0 else None
+        }
+    except Exception as e:
+        logging.error(f"Centauri fetch for '{p.get('name')}': {e}")
+        return {'state': 'Offline', 'error': str(e)}
 
 def fetch_printer(p):
     ptype = p.get('type')
