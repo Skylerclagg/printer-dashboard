@@ -240,6 +240,30 @@ def start_prusa_print(printer_config, gcode_filename):
         logging.error(f"PrusaLink print failed for '{printer_config['name']}': {e}")
         return False, f"Failed to start print: {e}"
 
+def start_bambu_print(printer_config, gcode_filename):
+    if not printer_config.get('ip') or not printer_config.get('access_code'):
+        return False, "Printer IP or Access Code is not configured."
+    try:
+        gcode_path = os.path.join(app.config['GCODE_UPLOAD_FOLDER'], gcode_filename)
+        headers = {'X-Access-Code': printer_config['access_code']}
+        with open(gcode_path, 'rb') as f:
+            files = {'file': (gcode_filename, f, 'application/octet-stream')}
+            upload_url = f"http://{printer_config['ip']}/api/v1/upload"
+            response = requests.post(upload_url, headers=headers, files=files, timeout=30)
+            response.raise_for_status()
+        start_url = f"http://{printer_config['ip']}/api/v1/print/start"
+        response = requests.post(start_url, headers=headers, json={'file': gcode_filename}, timeout=10)
+        response.raise_for_status()
+        logging.info(f"Started print '{gcode_filename}' on Bambu printer '{printer_config['name']}'.")
+        return True, "Print started successfully."
+    except Exception as e:
+        logging.error(f"Bambu print failed for '{printer_config['name']}': {e}")
+        return False, f"Failed to start print: {e}"
+
+def start_centauri_print(printer_config, gcode_filename):
+    # Centauri printers use a Klipper-compatible API
+    return start_klipper_print(printer_config, gcode_filename)
+
 def stop_klipper_print(printer_config):
     if not printer_config.get('url'):
         return False, "Printer URL is not configured."
@@ -267,6 +291,23 @@ def stop_prusa_print(printer_config):
     except Exception as e:
         logging.error(f"Prusa stop failed for '{printer_config['name']}': {e}")
         return False, f"Failed to stop print: {e}"
+
+def stop_bambu_print(printer_config):
+    if not printer_config.get('ip') or not printer_config.get('access_code'):
+        return False, "Printer IP or Access Code is not configured."
+    try:
+        headers = {'X-Access-Code': printer_config['access_code']}
+        stop_url = f"http://{printer_config['ip']}/api/v1/print/stop"
+        response = requests.post(stop_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        logging.info(f"Stopped print on Bambu '{printer_config['name']}'.")
+        return True, "Print stopped successfully."
+    except Exception as e:
+        logging.error(f"Bambu stop failed for '{printer_config['name']}': {e}")
+        return False, f"Failed to stop print: {e}"
+
+def stop_centauri_print(printer_config):
+    return stop_klipper_print(printer_config)
 
 # --- FETCHERS --------------------------------------------------------------
 def fetch_klipper_data(p):
@@ -348,12 +389,42 @@ def fetch_prusalink_data(p):
         logging.error(f"PrusaLink fetch for '{p.get('name')}': {e}")
         return {'state': 'Offline', 'error': str(e)}
 
+def fetch_bambu_data(p):
+    if not p.get('ip'):
+        return {'state': 'Config Error', 'error': 'Missing IP'}
+    try:
+        headers = {}
+        if p.get('access_code'):
+            headers['X-Access-Code'] = p['access_code']
+        resp = requests.get(f"http://{p['ip']}/api/v1/status", headers=headers, timeout=5)
+        resp.raise_for_status()
+        status = resp.json()
+        return {
+            'state': (status.get('state') or 'unknown').title(),
+            'filename': status.get('file'),
+            'progress': status.get('progress'),
+            'bed_temp': status.get('bed_temp'),
+            'nozzle_temp': status.get('nozzle_temp'),
+            'time_elapsed': status.get('time_elapsed'),
+            'time_remaining': status.get('time_remaining')
+        }
+    except Exception as e:
+        logging.error(f"Bambu fetch for '{p.get('name')}': {e}")
+        return {'state': 'Offline', 'error': str(e)}
+
+def fetch_centauri_data(p):
+    return fetch_klipper_data(p)
+
 def fetch_printer(p):
     ptype = p.get('type')
     if ptype == 'klipper':
         return fetch_klipper_data(p)
     if ptype == 'prusa':
         return fetch_prusalink_data(p)
+    if ptype == 'bambu':
+        return fetch_bambu_data(p)
+    if ptype == 'centauri':
+        return fetch_centauri_data(p)
     return {'state': 'Config Error', 'error': f"Unknown type '{ptype}'"}
 
 def get_image_src(printer_config):
@@ -691,6 +762,16 @@ def add_printer(active_tab):
             file.save(os.path.join(app.config['PRINTER_UPLOAD_FOLDER'], filename))
             new_printer['local_image_filename'] = filename
             new_printer['image_url'] = ''
+    required = {
+        'prusa': ['ip', 'api_key'],
+        'klipper': ['url'],
+        'bambu': ['ip', 'access_code'],
+        'centauri': ['url']
+    }
+    missing = [f for f in required.get(new_printer.get('type'), []) if not new_printer.get(f)]
+    if missing:
+        flash(f"Missing required fields for {new_printer.get('type')} printer: {', '.join(missing)}.", 'danger')
+        return redirect(url_for('admin', tab=active_tab))
     if any(p['name'] == new_printer['name'] for p in printers):
         flash(f"A printer with the name '{new_printer['name']}' already exists.", 'danger')
     else:
@@ -734,6 +815,16 @@ def edit_printer_modal(active_tab):
             file.save(os.path.join(app.config['PRINTER_UPLOAD_FOLDER'], filename))
             updated_data['local_image_filename'] = filename
             updated_data['image_url'] = ''
+    required = {
+        'prusa': ['ip', 'api_key'],
+        'klipper': ['url'],
+        'bambu': ['ip', 'access_code'],
+        'centauri': ['url']
+    }
+    missing = [f for f in required.get(updated_data.get('type'), []) if not updated_data.get(f)]
+    if missing:
+        flash(f"Missing required fields for {updated_data.get('type')} printer: {', '.join(missing)}.", 'danger')
+        return redirect(url_for('admin', tab=active_tab))
     for i, p in enumerate(printers):
         if p['name'] == original_name:
             printers[i] = {k: v for k, v in updated_data.items() if v not in [None, ""]} | {
@@ -1283,6 +1374,10 @@ def handle_approval():
             success, message = start_klipper_print(printer_config, target_job['gcode_filename'])
         elif printer_config['type'] == 'prusa':
             success, message = start_prusa_print(printer_config, target_job['gcode_filename'])
+        elif printer_config['type'] == 'bambu':
+            success, message = start_bambu_print(printer_config, target_job['gcode_filename'])
+        elif printer_config['type'] == 'centauri':
+            success, message = start_centauri_print(printer_config, target_job['gcode_filename'])
         if success:
             target_job['status'] = 'approved'
             target_job['approved_by'] = session.get('username')
@@ -1314,6 +1409,10 @@ def admin_stop_print():
         ok, msg = stop_klipper_print(printer_config)
     elif printer_config['type'] == 'prusa':
         ok, msg = stop_prusa_print(printer_config)
+    elif printer_config['type'] == 'bambu':
+        ok, msg = stop_bambu_print(printer_config)
+    elif printer_config['type'] == 'centauri':
+        ok, msg = stop_centauri_print(printer_config)
     else:
         ok, msg = False, 'Unknown printer type'
     if ok:
