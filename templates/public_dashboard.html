@@ -488,6 +488,12 @@
       }
     }
 
+    function displayType(t){
+      const map = {prusa:'Prusa', klipper:'Klipper', bambu:'Bambu Labs', centauri:'Elegoo'};
+      if(!t) return 'N/A';
+      return map[t] || t.charAt(0).toUpperCase() + t.slice(1);
+    }
+
     function createPrinterCardHTML(name, p, config, userCanUpload, userCanViewNames){
       const displayState = aliasState(p.state || 'Unknown', config);
       const stateClass = stateToClass(displayState);
@@ -552,7 +558,7 @@
           <div class="card-body">
             <div class="printer-header">
               <h3><span class="status-indicator ${stateClass}"></span> ${name}</h3>
-              <span class="badge bg-secondary">${p.type || 'N/A'}</span>
+              <span class="badge bg-secondary">${displayType(p.type)}</span>
             </div>
 
             <div class="image-slot">${imageHtml}</div>

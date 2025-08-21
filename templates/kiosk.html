@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="font-size: {{ kiosk_config.kiosk_font_size|default(100) }}%">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -189,6 +189,12 @@
       const lum = 0.2126*Math.pow(r,2.2) + 0.7152*Math.pow(g,2.2) + 0.0722*Math.pow(b,2.2);
       return lum > 0.5 ? '#000000' : '#ffffff';
     }
+
+    function displayType(t){
+      const map = {prusa:'Prusa', klipper:'Klipper', bambu:'Bambu Labs', centauri:'Elegoo'};
+      if(!t) return 'N/A';
+      return map[t] || t.charAt(0).toUpperCase() + t.slice(1);
+    }
     function updateHeaderHeight(){
       const h = kioskHeader.style.display === 'none' ? 0 : (kioskHeader.offsetHeight || 0);
       document.documentElement.style.setProperty('--header-height', h + 'px');
@@ -252,7 +258,7 @@
           <div class="card-body">
             <div class="printer-header">
               <h3><span class="status-indicator ${stateClass}"></span> ${name}</h3>
-              <span class="badge bg-secondary">${p.type || 'N/A'}</span>
+              <span class="badge bg-secondary">${displayType(p.type)}</span>
             </div>
             <div class="image-slot">
               ${imgSrc ? `<img src="${imgSrc}" alt="Printer image for ${name}" class="printer-img" onerror="this.remove();">` : ''}
@@ -270,6 +276,7 @@
       const userCanViewNames = data.can_view_filenames !== false;
 
       document.documentElement.classList.toggle('dark', !!globalKioskConfig.kiosk_dark_mode);
+      document.documentElement.style.fontSize = (globalKioskConfig.kiosk_font_size || 100) + '%';
       document.body.style.backgroundColor = globalKioskConfig.kiosk_background_color || (globalKioskConfig.kiosk_dark_mode ? '#000' : '#fff');
       document.documentElement.style.setProperty('--header-img-height', ((globalKioskConfig.kiosk_header_height_px || 150) + 'px'));
 

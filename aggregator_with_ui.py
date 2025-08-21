@@ -18,6 +18,7 @@ import requests
 import logging
 import shutil
 import datetime
+from urllib.parse import urlparse
 from flask import (
     Flask, jsonify, request, redirect, url_for, render_template,
     session, flash, Response
@@ -77,6 +78,18 @@ app.config['ASSETS_UPLOAD_FOLDER'] = ASSETS_UPLOAD_FOLDER
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 
+PRINTER_TYPE_DISPLAY = {
+    'prusa': 'Prusa',
+    'klipper': 'Klipper',
+    'bambu': 'Bambu Labs',
+    'centauri': 'Elegoo'
+}
+
+def type_display(t):
+    return PRINTER_TYPE_DISPLAY.get((t or '').lower(), (t or '').title())
+
+app.jinja_env.filters['type_display'] = type_display
+
 # --- LOGGING SETUP ---------------------------------------------------------
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -100,6 +113,16 @@ def load_data(file_path, default_data):
 def save_data(data, file_path):
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=2, sort_keys=True)
+
+def normalize_username(username):
+    return (username or '').strip().lower()
+
+def load_users():
+    users = load_data(USERS_FILE, {})
+    normalized = {normalize_username(k): v for k, v in users.items()}
+    if normalized != users:
+        save_data(normalized, USERS_FILE)
+    return normalized
 
 def get_full_config():
     defaults = {
@@ -141,7 +164,7 @@ DEFAULT_KIOSK_CONFIG = {
     "kiosk_image_page_time": 5, "kiosk_image_frequency": 2, "kiosk_images_per_slot": 1,
     "kiosk_images": [], "kiosk_background_color": "#000000", "kiosk_sort_by": "manual",
     "kiosk_title": "", "kiosk_header_image": "", "kiosk_header_height_px": 150,
-    "show_printers": True, "kiosk_dark_mode": False
+    "show_printers": True, "kiosk_dark_mode": False, "kiosk_font_size": 100
 }
 
 def get_kiosk_config(kiosk_id='default'):
@@ -239,6 +262,30 @@ def start_prusa_print(printer_config, gcode_filename):
         logging.error(f"PrusaLink print failed for '{printer_config['name']}': {e}")
         return False, f"Failed to start print: {e}"
 
+def start_bambu_print(printer_config, gcode_filename):
+    if not printer_config.get('ip') or not printer_config.get('access_code'):
+        return False, "Printer IP or Access Code is not configured."
+    try:
+        gcode_path = os.path.join(app.config['GCODE_UPLOAD_FOLDER'], gcode_filename)
+        headers = {'X-Access-Code': printer_config['access_code']}
+        with open(gcode_path, 'rb') as f:
+            files = {'file': (gcode_filename, f, 'application/octet-stream')}
+            upload_url = f"http://{printer_config['ip']}/api/v1/upload"
+            response = requests.post(upload_url, headers=headers, files=files, timeout=30)
+            response.raise_for_status()
+        start_url = f"http://{printer_config['ip']}/api/v1/print/start"
+        response = requests.post(start_url, headers=headers, json={'file': gcode_filename}, timeout=10)
+        response.raise_for_status()
+        logging.info(f"Started print '{gcode_filename}' on Bambu printer '{printer_config['name']}'.")
+        return True, "Print started successfully."
+    except Exception as e:
+        logging.error(f"Bambu print failed for '{printer_config['name']}': {e}")
+        return False, f"Failed to start print: {e}"
+
+def start_centauri_print(printer_config, gcode_filename):
+    # Centauri printers use a Klipper-compatible API
+    return start_klipper_print(printer_config, gcode_filename)
+
 def stop_klipper_print(printer_config):
     if not printer_config.get('url'):
         return False, "Printer URL is not configured."
@@ -257,15 +304,31 @@ def stop_prusa_print(printer_config):
         return False, "Printer IP or API Key is not configured."
     try:
         headers = {'X-Api-Key': printer_config['api_key']}
-        stop_url = f"http://{printer_config['ip']}/api/v1/command"
-        payload = {"command": "stop"}
-        response = requests.post(stop_url, headers=headers, json=payload, timeout=10)
+        stop_url = f"http://{printer_config['ip']}/api/v1/print/stop"
+        response = requests.post(stop_url, headers=headers, timeout=10)
         response.raise_for_status()
         logging.info(f"Stopped print on Prusa '{printer_config['name']}'.")
         return True, "Print stopped successfully."
     except Exception as e:
         logging.error(f"Prusa stop failed for '{printer_config['name']}': {e}")
         return False, f"Failed to stop print: {e}"
+
+def stop_bambu_print(printer_config):
+    if not printer_config.get('ip') or not printer_config.get('access_code'):
+        return False, "Printer IP or Access Code is not configured."
+    try:
+        headers = {'X-Access-Code': printer_config['access_code']}
+        stop_url = f"http://{printer_config['ip']}/api/v1/print/stop"
+        response = requests.post(stop_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        logging.info(f"Stopped print on Bambu '{printer_config['name']}'.")
+        return True, "Print stopped successfully."
+    except Exception as e:
+        logging.error(f"Bambu stop failed for '{printer_config['name']}': {e}")
+        return False, f"Failed to stop print: {e}"
+
+def stop_centauri_print(printer_config):
+    return stop_klipper_print(printer_config)
 
 # --- FETCHERS --------------------------------------------------------------
 def fetch_klipper_data(p):
@@ -347,12 +410,94 @@ def fetch_prusalink_data(p):
         logging.error(f"PrusaLink fetch for '{p.get('name')}': {e}")
         return {'state': 'Offline', 'error': str(e)}
 
+def fetch_bambu_data(p):
+    if not p.get('ip'):
+        return {'state': 'Config Error', 'error': 'Missing IP'}
+    try:
+        headers = {}
+        if p.get('access_code'):
+            headers['X-Access-Code'] = p['access_code']
+        resp = requests.get(f"http://{p['ip']}/api/v1/status", headers=headers, timeout=5)
+        resp.raise_for_status()
+        status = resp.json()
+        return {
+            'state': (status.get('state') or 'unknown').title(),
+            'filename': status.get('file'),
+            'progress': status.get('progress'),
+            'bed_temp': status.get('bed_temp'),
+            'nozzle_temp': status.get('nozzle_temp'),
+            'time_elapsed': status.get('time_elapsed'),
+            'time_remaining': status.get('time_remaining')
+        }
+    except Exception as e:
+        logging.error(f"Bambu fetch for '{p.get('name')}': {e}")
+        return {'state': 'Offline', 'error': str(e)}
+
+def fetch_centauri_data(p):
+    base = p.get('url') or (f"http://{p['ip']}" if p.get('ip') else None)
+    if not base:
+        return {'state': 'Config Error', 'error': 'Missing URL or IP'}
+
+    headers = {}
+    if p.get('access_code'):
+        headers['X-Access-Code'] = p['access_code']
+
+    # Try Elegoo's JSON status endpoint first
+    try:
+        resp = requests.get(f"{base}/api/v1/status", headers=headers, timeout=5)
+        if resp.status_code != 404:
+            resp.raise_for_status()
+            status = resp.json()
+            return {
+                'state': (status.get('state') or 'unknown').title(),
+                'filename': status.get('file'),
+                'progress': status.get('progress'),
+                'bed_temp': status.get('bed_temp'),
+                'nozzle_temp': status.get('nozzle_temp'),
+                'time_elapsed': status.get('time_elapsed'),
+                'time_remaining': status.get('time_remaining')
+            }
+    except Exception as e:
+        logging.debug(f"Centauri JSON status fetch failed for '{p.get('name')}': {e}")
+
+    # Fallback to standard Klipper/Moonraker endpoints
+    try:
+        r = requests.get(
+            f"{base}/printer/objects/query?print_stats&display_status&heater_bed&extruder&virtual_sdcard",
+            timeout=5
+        )
+        r.raise_for_status()
+        res = r.json()['result']['status']
+        print_stats = res.get('print_stats', {})
+        state = (print_stats.get('state', 'unknown') or 'unknown').title()
+        filename = print_stats.get('filename')
+        prog = res.get('virtual_sdcard', {}).get('progress')
+        time_elapsed = print_stats.get('print_duration')
+        file_progress = res.get('virtual_sdcard', {}).get('progress', 0)
+        time_remaining = (time_elapsed / file_progress - time_elapsed) if file_progress > 0 and time_elapsed else None
+        return {
+            'state': state,
+            'filename': filename,
+            'progress': round(prog * 100, 1) if prog else None,
+            'bed_temp': round(res.get('heater_bed', {}).get('temperature', 0), 1),
+            'nozzle_temp': round(res.get('extruder', {}).get('temperature', 0), 1),
+            'time_elapsed': int(time_elapsed) if time_elapsed else None,
+            'time_remaining': int(time_remaining) if time_remaining and time_remaining > 0 else None
+        }
+    except Exception as e:
+        logging.error(f"Centauri fetch for '{p.get('name')}': {e}")
+        return {'state': 'Offline', 'error': str(e)}
+
 def fetch_printer(p):
     ptype = p.get('type')
     if ptype == 'klipper':
         return fetch_klipper_data(p)
     if ptype == 'prusa':
         return fetch_prusalink_data(p)
+    if ptype == 'bambu':
+        return fetch_bambu_data(p)
+    if ptype == 'centauri':
+        return fetch_centauri_data(p)
     return {'state': 'Config Error', 'error': f"Unknown type '{ptype}'"}
 
 def get_image_src(printer_config):
@@ -389,11 +534,11 @@ def _stash_signup_feedback(errors, values):
 @app.route('/', methods=['GET', 'POST'])
 def root():
     config = get_full_config()
-    users = load_data(USERS_FILE, {})
+    users = load_users()
 
     # LOGIN
     if request.method == 'POST':
-        username = request.form.get('username')
+        username = normalize_username(request.form.get('username'))
         password = request.form.get('password')
         user_data = users.get(username)
         if user_data and check_password_hash(user_data['password'], password):
@@ -482,14 +627,14 @@ def login_as(role_name):
 @app.route('/account')
 @require_permission('view_dashboard')
 def manage_account():
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     user_data = users.get(session['username'])
     return render_template('account.html', user=user_data)
 
 @app.route('/update_account', methods=['POST'])
 @require_permission('view_dashboard')
 def update_account():
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     username = session['username']
 
     users[username]['name'] = request.form.get('full_name')
@@ -563,7 +708,7 @@ def status_json():
 def admin():
     printers = load_data(PRINTERS_FILE, [])
     overrides = load_data(OVERRIDES_FILE, {})
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     roles = load_data(ROLES_FILE, {})
     config = get_full_config()
     kiosk_configs = list_kiosk_configs()
@@ -690,6 +835,16 @@ def add_printer(active_tab):
             file.save(os.path.join(app.config['PRINTER_UPLOAD_FOLDER'], filename))
             new_printer['local_image_filename'] = filename
             new_printer['image_url'] = ''
+    required = {
+        'prusa': ['ip', 'api_key'],
+        'klipper': ['url'],
+        'bambu': ['ip', 'access_code'],
+        'centauri': ['url']
+    }
+    missing = [f for f in required.get(new_printer.get('type'), []) if not new_printer.get(f)]
+    if missing:
+        flash(f"Missing required fields for {new_printer.get('type')} printer: {', '.join(missing)}.", 'danger')
+        return redirect(url_for('admin', tab=active_tab))
     if any(p['name'] == new_printer['name'] for p in printers):
         flash(f"A printer with the name '{new_printer['name']}' already exists.", 'danger')
     else:
@@ -733,6 +888,16 @@ def edit_printer_modal(active_tab):
             file.save(os.path.join(app.config['PRINTER_UPLOAD_FOLDER'], filename))
             updated_data['local_image_filename'] = filename
             updated_data['image_url'] = ''
+    required = {
+        'prusa': ['ip', 'api_key'],
+        'klipper': ['url'],
+        'bambu': ['ip', 'access_code'],
+        'centauri': ['url']
+    }
+    missing = [f for f in required.get(updated_data.get('type'), []) if not updated_data.get(f)]
+    if missing:
+        flash(f"Missing required fields for {updated_data.get('type')} printer: {', '.join(missing)}.", 'danger')
+        return redirect(url_for('admin', tab=active_tab))
     for i, p in enumerate(printers):
         if p['name'] == original_name:
             printers[i] = {k: v for k, v in updated_data.items() if v not in [None, ""]} | {
@@ -775,10 +940,10 @@ def manage_users():
 
 @require_permission('add_user')
 def add_user(active_tab):
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     roles = load_data(ROLES_FILE, {})
     logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
-    username = (request.form.get('username') or '').strip()
+    username = normalize_username(request.form.get('username'))
     password = request.form.get('password')
     role = request.form.get('role')
     full_name = request.form.get('full_name', username).strip()
@@ -814,9 +979,9 @@ def add_user(active_tab):
 
 @require_permission('edit_user')
 def edit_user(active_tab):
-    users = load_data(USERS_FILE, {})
-    original_username = request.form.get('original_username')
-    new_username = request.form.get('new_username') or original_username
+    users = load_users()
+    original_username = normalize_username(request.form.get('original_username'))
+    new_username = normalize_username(request.form.get('new_username')) or original_username
 
     if original_username not in users:
         flash('User not found.', 'danger')
@@ -854,10 +1019,10 @@ def edit_user(active_tab):
 
 @require_permission('delete_user')
 def delete_user(active_tab):
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     roles = load_data(ROLES_FILE, {})
     logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
-    username_to_delete = request.form.get('username')
+    username_to_delete = normalize_username(request.form.get('username'))
     if username_to_delete in users and int(roles.get(users[username_to_delete]['role'], {}).get('level', 999)) < logged_in_role_level:
         del users[username_to_delete]
         save_data(users, USERS_FILE)
@@ -888,6 +1053,8 @@ def add_role(active_tab):
     level = int(request.form.get('level', 1))
     user_role_name = session.get('role', '')
     user_permissions = roles.get(user_role_name, {}).get('permissions', [])
+    if '*' in user_permissions:
+        user_permissions = get_available_permissions()
     if role_name and role_name not in roles:
         allowed_perms = [p for p in permissions if p in user_permissions]
         roles[role_name] = {'permissions': allowed_perms, 'level': level}
@@ -921,6 +1088,8 @@ def edit_role_post(active_tab):
     level = int(request.form.get('level', 1))
     user_role_name = session.get('role', '')
     user_permissions = set(roles.get(user_role_name, {}).get('permissions', []))
+    if '*' in user_permissions:
+        user_permissions = set(get_available_permissions())
     current_perms = set(role_to_edit.get('permissions', []))
     final_perms = set(current_perms)
     requested_perms = set(permissions)
@@ -1014,6 +1183,7 @@ def update_kiosk(active_tab):
                 kiosk_config['kiosk_header_image'] = url_for('static', filename=f"kiosk_images/{kiosk_id}/{filename}")
     kiosk_config['kiosk_image_page_time'] = int(request.form.get('kiosk_image_page_time', 5))
     kiosk_config['kiosk_background_color'] = request.form.get('kiosk_background_color', '#000000')
+    kiosk_config['kiosk_font_size'] = int(request.form.get('kiosk_font_size', 100))
     kiosk_config['kiosk_dark_mode'] = 'kiosk_dark_mode' in request.form
     name = request.form.get('kiosk_name')
     if name:
@@ -1106,9 +1276,12 @@ def manage_kiosk_images():
     image_urls = request.form.getlist('url')
     image_times = request.form.getlist('time')
     image_actives = set(request.form.getlist('active'))
+    delete_urls = set(request.form.getlist('delete_url'))
 
     for i in range(len(image_urls)):
         url = image_urls[i]
+        if url in delete_urls:
+            continue
         new_kiosk_images.append({
             'url': url,
             'time': int(image_times[i]),
@@ -1129,6 +1302,16 @@ def manage_kiosk_images():
                     kiosk_config['kiosk_images'].append({'url': image_url, 'time': default_time, 'active': True})
 
     save_data(kiosk_config, os.path.join(KIOSK_DIR, f"{kiosk_id}.json"))
+
+    for del_url in delete_urls:
+        filename = os.path.basename(urlparse(del_url).path)
+        file_path = os.path.join(kiosk_specific_dir, filename)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError:
+            logging.warning(f"Failed to delete kiosk image {file_path}")
+
     flash(f"Kiosk '{kiosk_id}' images updated.", 'success')
     return redirect(url_for('admin', tab='kiosk-control', kiosk=kiosk_id))
 
@@ -1264,6 +1447,10 @@ def handle_approval():
             success, message = start_klipper_print(printer_config, target_job['gcode_filename'])
         elif printer_config['type'] == 'prusa':
             success, message = start_prusa_print(printer_config, target_job['gcode_filename'])
+        elif printer_config['type'] == 'bambu':
+            success, message = start_bambu_print(printer_config, target_job['gcode_filename'])
+        elif printer_config['type'] == 'centauri':
+            success, message = start_centauri_print(printer_config, target_job['gcode_filename'])
         if success:
             target_job['status'] = 'approved'
             target_job['approved_by'] = session.get('username')
@@ -1295,6 +1482,10 @@ def admin_stop_print():
         ok, msg = stop_klipper_print(printer_config)
     elif printer_config['type'] == 'prusa':
         ok, msg = stop_prusa_print(printer_config)
+    elif printer_config['type'] == 'bambu':
+        ok, msg = stop_bambu_print(printer_config)
+    elif printer_config['type'] == 'centauri':
+        ok, msg = stop_centauri_print(printer_config)
     else:
         ok, msg = False, 'Unknown printer type'
     if ok:
@@ -1361,7 +1552,7 @@ def register():
         session['open_signup_modal'] = True
         return redirect(url_for('root'))
 
-    username  = (request.form.get('username') or '').strip()
+    username  = normalize_username(request.form.get('username'))
     password  = (request.form.get('password') or '')
     full_name = (request.form.get('full_name') or username).strip()
     email     = (request.form.get('email') or '').strip()
@@ -1372,7 +1563,7 @@ def register():
     if not password:
         errors['password'] = 'Please enter a password.'
 
-    users = load_data(USERS_FILE, {})
+    users = load_users()
 
     if username and username in users:
         errors['username'] = 'That username is taken.'

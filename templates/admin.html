@@ -250,10 +250,12 @@
                           {% for printer in printers %}
                           <tr>
                             <td>{{ printer.name }}</td>
-                            <td>{{ printer.type|capitalize }}</td>
+                            <td>{{ printer.type|type_display }}</td>
                             <td>
                               {% if printer.type == 'prusa' %}{{ printer.ip }} / {{ printer.api_key[:4] }}...{% endif %}
                               {% if printer.type == 'klipper' %}{{ printer.url }}{% endif %}
+                              {% if printer.type == 'bambu' %}{{ printer.ip }}{% endif %}
+                              {% if printer.type == 'centauri' %}{{ printer.url }}{% endif %}
                             </td>
                             <td>
                               {% if 'set_overrides' in user_permissions %}
@@ -278,6 +280,8 @@
                                 data-printer-url="{{ printer.get('url','') }}"
                                 data-printer-ip="{{ printer.get('ip','') }}"
                                 data-printer-api_key="{{ printer.get('api_key','') }}"
+                                data-printer-access_code="{{ printer.get('access_code','') }}"
+                                data-printer-serial="{{ printer.get('serial','') }}"
                                 data-printer-image_url="{{ printer.get('image_url','') }}"
                                 data-printer-image_file="{{ printer.get('local_image_filename','') }}"
                                 data-printer-show_filename="{{ printer.get('show_filename', true)|tojson }}"
@@ -322,6 +326,8 @@
                           <select name="type" id="add-printer-type" class="form-select">
                             <option value="prusa">Prusa</option>
                             <option value="klipper">Klipper</option>
+                            <option value="bambu">Bambu Labs</option>
+                            <option value="centauri">Elegoo Centauri Carbon</option>
                           </select>
                         </div>
                       </div>
@@ -341,6 +347,28 @@
                         <div class="col-12">
                           <label class="form-label">Moonraker/Klipper URL</label>
                           <input type="text" name="url" class="form-control" placeholder="http://klipper.local">
+                        </div>
+                      </div>
+
+                      <div id="bambu-fields" class="row g-3 mt-1 type-specific-fields" style="display:none;">
+                        <div class="col-md-6">
+                          <label class="form-label">IP Address</label>
+                          <input type="text" name="ip" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label">Access Code</label>
+                          <input type="text" name="access_code" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label">Serial (Optional)</label>
+                          <input type="text" name="serial" class="form-control">
+                        </div>
+                      </div>
+
+                      <div id="centauri-fields" class="row g-3 mt-1 type-specific-fields" style="display:none;">
+                        <div class="col-12">
+                          <label class="form-label">Printer URL</label>
+                          <input type="text" name="url" class="form-control" placeholder="http://centauri.local">
                         </div>
                       </div>
 
@@ -1009,6 +1037,7 @@
                 <div class="row g-3">
                   <div class="col-md-4"><label class="form-label">Display Name</label><input type="text" name="kiosk_name" value="{{ kconf.name }}" class="form-control"></div>
                   <div class="col-md-4"><label class="form-label">Background Color</label><input type="color" name="kiosk_background_color" value="{{ kconf.kiosk_background_color }}" class="form-control form-control-color"></div>
+                  <div class="col-md-4"><label class="form-label">Font Size (%)</label><input type="number" name="kiosk_font_size" value="{{ kconf.kiosk_font_size }}" class="form-control" min="50" max="200"></div>
                   <div class="col-md-4">
                     <label class="form-label">Dark Mode Cards</label>
                     <div class="form-check form-switch">
@@ -1054,6 +1083,7 @@
                         <input class="form-check-input" type="checkbox" name="active" value="{{ image.url }}" id="active_{{ kid }}_{{ loop.index0 }}" {% if image.active %}checked{% endif %}>
                         <label class="form-check-label" for="active_{{ kid }}_{{ loop.index0 }}">Active</label>
                       </div>
+                      <button type="button" class="btn btn-sm btn-danger remove-image-btn" data-url="{{ image.url }}">Delete</button>
                     </div>
                   </li>
                   {% endfor %}
@@ -1193,10 +1223,12 @@
                 <select name="type" id="edit-printer-type" class="form-select">
                   <option value="prusa">Prusa</option>
                   <option value="klipper">Klipper</option>
+                  <option value="bambu">Bambu Labs</option>
+                  <option value="centauri">Elegoo Centauri Carbon</option>
                 </select>
               </div>
 
-              <div class="col-md-6 edit-type-prusa">
+              <div class="col-md-6 edit-type-prusa edit-type-bambu">
                 <label class="form-label">IP Address</label>
                 <input type="text" class="form-control" id="edit-printer-ip" name="ip">
               </div>
@@ -1204,9 +1236,17 @@
                 <label class="form-label">API Key</label>
                 <input type="text" class="form-control" id="edit-printer-api_key" name="api_key">
               </div>
+              <div class="col-md-6 edit-type-bambu">
+                <label class="form-label">Access Code</label>
+                <input type="text" class="form-control" id="edit-printer-access_code" name="access_code">
+              </div>
+              <div class="col-md-6 edit-type-bambu">
+                <label class="form-label">Serial (Optional)</label>
+                <input type="text" class="form-control" id="edit-printer-serial" name="serial">
+              </div>
 
-              <div class="col-12 edit-type-klipper">
-                <label class="form-label">Moonraker/Klipper URL</label>
+              <div class="col-12 edit-type-klipper edit-type-centauri">
+                <label class="form-label">Printer URL</label>
                 <input type="text" class="form-control" id="edit-printer-url" name="url" placeholder="http://klipper.local">
               </div>
 
@@ -1328,8 +1368,21 @@
 
     function handleAddFormDisplay(){
       const type = document.getElementById('add-printer-type').value;
-      document.getElementById('prusa-fields').style.display   = (type === 'prusa')  ? 'flex' : 'none';
-      document.getElementById('klipper-fields').style.display = (type === 'klipper')? 'flex' : 'none';
+      const groups = {
+        prusa: document.getElementById('prusa-fields'),
+        klipper: document.getElementById('klipper-fields'),
+        bambu: document.getElementById('bambu-fields'),
+        centauri: document.getElementById('centauri-fields')
+      };
+      Object.entries(groups).forEach(([t, el]) => {
+        if (!el) return;
+        const show = (t === type);
+        el.style.display = show ? 'flex' : 'none';
+        el.querySelectorAll('input').forEach(inp => {
+          inp.disabled = !show;
+          inp.required = show && inp.name !== 'serial';
+        });
+      });
     }
     function displayKioskSettings(kid){
       document.querySelectorAll('.kiosk-settings').forEach(div => div.style.display = 'none');
@@ -1413,6 +1466,30 @@
 
       document.querySelectorAll('.sortable-images').forEach(ul => {
         new Sortable(ul, { animation:150 });
+      });
+
+      document.querySelectorAll('.remove-image-btn').forEach(btn => {
+        btn.addEventListener('click', function(){
+          const url = this.dataset.url;
+          const li = this.closest('li');
+          const form = this.closest('form');
+          if (li && form){
+            li.remove();
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'delete_url';
+            hidden.value = url;
+            form.appendChild(hidden);
+            const perSlotInput = form.querySelector('[name="kiosk_images_per_slot"]');
+            if (perSlotInput){
+              const activeCount = form.querySelectorAll('input[name="active"]:checked').length;
+              perSlotInput.max = activeCount;
+              if (parseInt(perSlotInput.value, 10) > activeCount){
+                perSlotInput.value = activeCount;
+              }
+            }
+          }
+        });
       });
 
       const layoutForm = document.getElementById('layout-form');
@@ -1527,8 +1604,22 @@
       const editPrinterModal = document.getElementById('editPrinterModal');
       function toggleEditTypeFields(){
         const type = document.getElementById('edit-printer-type').value;
-        document.querySelectorAll('.edit-type-prusa').forEach(el => el.style.display = (type === 'prusa')? '' : 'none');
-        document.querySelectorAll('.edit-type-klipper').forEach(el => el.style.display = (type === 'klipper')? '' : 'none');
+        const groups = {
+          prusa: document.querySelectorAll('.edit-type-prusa'),
+          klipper: document.querySelectorAll('.edit-type-klipper'),
+          bambu: document.querySelectorAll('.edit-type-bambu'),
+          centauri: document.querySelectorAll('.edit-type-centauri')
+        };
+        Object.entries(groups).forEach(([t, nodes]) => {
+          nodes.forEach(el => {
+            const show = (t === type);
+            el.style.display = show ? '' : 'none';
+            el.querySelectorAll('input').forEach(inp => {
+              inp.disabled = !show;
+              inp.required = show && inp.id !== 'edit-printer-serial';
+            });
+          });
+        });
       }
       if (editPrinterModal){
         editPrinterModal.addEventListener('show.bs.modal', function(event){
@@ -1538,6 +1629,8 @@
           const url  = b.dataset.printerUrl || '';
           const ip   = b.dataset.printerIp || '';
           const key  = b.dataset.printerApi_key || '';
+          const acc  = b.dataset.printerAccess_code || '';
+          const serial = b.dataset.printerSerial || '';
           const imgU = b.dataset.printerImage_url || '';
           const showFilename = (b.dataset.printerShow_filename === 'true');
           const acceptsUploads = (b.dataset.printerAccepts_uploads === 'true');
@@ -1548,6 +1641,10 @@
           editPrinterModal.querySelector('#edit-printer-url').value = url;
           editPrinterModal.querySelector('#edit-printer-ip').value = ip;
           editPrinterModal.querySelector('#edit-printer-api_key').value = key;
+          const accEl = editPrinterModal.querySelector('#edit-printer-access_code');
+          if (accEl) accEl.value = acc;
+          const serialEl = editPrinterModal.querySelector('#edit-printer-serial');
+          if (serialEl) serialEl.value = serial;
           editPrinterModal.querySelector('#edit-printer-image_url').value = imgU;
           editPrinterModal.querySelector('#edit-printer-show_filename').checked = showFilename;
           editPrinterModal.querySelector('#edit-printer-accepts_uploads').checked = acceptsUploads;
