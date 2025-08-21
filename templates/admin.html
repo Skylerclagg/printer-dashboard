@@ -250,7 +250,7 @@
                           {% for printer in printers %}
                           <tr>
                             <td>{{ printer.name }}</td>
-                            <td>{{ printer.type|capitalize }}</td>
+                            <td>{{ printer.type|type_display }}</td>
                             <td>
                               {% if printer.type == 'prusa' %}{{ printer.ip }} / {{ printer.api_key[:4] }}...{% endif %}
                               {% if printer.type == 'klipper' %}{{ printer.url }}{% endif %}
@@ -326,7 +326,7 @@
                           <select name="type" id="add-printer-type" class="form-select">
                             <option value="prusa">Prusa</option>
                             <option value="klipper">Klipper</option>
-                            <option value="bambu">Bambu Lab</option>
+                            <option value="bambu">Bambu Labs</option>
                             <option value="centauri">Elegoo Centauri Carbon</option>
                           </select>
                         </div>
@@ -1223,7 +1223,7 @@
                 <select name="type" id="edit-printer-type" class="form-select">
                   <option value="prusa">Prusa</option>
                   <option value="klipper">Klipper</option>
-                  <option value="bambu">Bambu Lab</option>
+                  <option value="bambu">Bambu Labs</option>
                   <option value="centauri">Elegoo Centauri Carbon</option>
                 </select>
               </div>

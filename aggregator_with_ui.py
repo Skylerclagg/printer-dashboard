@@ -78,6 +78,18 @@ app.config['ASSETS_UPLOAD_FOLDER'] = ASSETS_UPLOAD_FOLDER
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 
+PRINTER_TYPE_DISPLAY = {
+    'prusa': 'Prusa',
+    'klipper': 'Klipper',
+    'bambu': 'Bambu Labs',
+    'centauri': 'Elegoo'
+}
+
+def type_display(t):
+    return PRINTER_TYPE_DISPLAY.get((t or '').lower(), (t or '').title())
+
+app.jinja_env.filters['type_display'] = type_display
+
 # --- LOGGING SETUP ---------------------------------------------------------
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -101,6 +113,16 @@ def load_data(file_path, default_data):
 def save_data(data, file_path):
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=2, sort_keys=True)
+
+def normalize_username(username):
+    return (username or '').strip().lower()
+
+def load_users():
+    users = load_data(USERS_FILE, {})
+    normalized = {normalize_username(k): v for k, v in users.items()}
+    if normalized != users:
+        save_data(normalized, USERS_FILE)
+    return normalized
 
 def get_full_config():
     defaults = {
@@ -282,9 +304,8 @@ def stop_prusa_print(printer_config):
         return False, "Printer IP or API Key is not configured."
     try:
         headers = {'X-Api-Key': printer_config['api_key']}
-        stop_url = f"http://{printer_config['ip']}/api/v1/command"
-        payload = {"command": "stop"}
-        response = requests.post(stop_url, headers=headers, json=payload, timeout=10)
+        stop_url = f"http://{printer_config['ip']}/api/v1/print/stop"
+        response = requests.post(stop_url, headers=headers, timeout=10)
         response.raise_for_status()
         logging.info(f"Stopped print on Prusa '{printer_config['name']}'.")
         return True, "Print stopped successfully."
@@ -461,11 +482,11 @@ def _stash_signup_feedback(errors, values):
 @app.route('/', methods=['GET', 'POST'])
 def root():
     config = get_full_config()
-    users = load_data(USERS_FILE, {})
+    users = load_users()
 
     # LOGIN
     if request.method == 'POST':
-        username = request.form.get('username')
+        username = normalize_username(request.form.get('username'))
         password = request.form.get('password')
         user_data = users.get(username)
         if user_data and check_password_hash(user_data['password'], password):
@@ -554,14 +575,14 @@ def login_as(role_name):
 @app.route('/account')
 @require_permission('view_dashboard')
 def manage_account():
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     user_data = users.get(session['username'])
     return render_template('account.html', user=user_data)
 
 @app.route('/update_account', methods=['POST'])
 @require_permission('view_dashboard')
 def update_account():
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     username = session['username']
 
     users[username]['name'] = request.form.get('full_name')
@@ -635,7 +656,7 @@ def status_json():
 def admin():
     printers = load_data(PRINTERS_FILE, [])
     overrides = load_data(OVERRIDES_FILE, {})
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     roles = load_data(ROLES_FILE, {})
     config = get_full_config()
     kiosk_configs = list_kiosk_configs()
@@ -867,10 +888,10 @@ def manage_users():
 
 @require_permission('add_user')
 def add_user(active_tab):
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     roles = load_data(ROLES_FILE, {})
     logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
-    username = (request.form.get('username') or '').strip()
+    username = normalize_username(request.form.get('username'))
     password = request.form.get('password')
     role = request.form.get('role')
     full_name = request.form.get('full_name', username).strip()
@@ -906,9 +927,9 @@ def add_user(active_tab):
 
 @require_permission('edit_user')
 def edit_user(active_tab):
-    users = load_data(USERS_FILE, {})
-    original_username = request.form.get('original_username')
-    new_username = request.form.get('new_username') or original_username
+    users = load_users()
+    original_username = normalize_username(request.form.get('original_username'))
+    new_username = normalize_username(request.form.get('new_username')) or original_username
 
     if original_username not in users:
         flash('User not found.', 'danger')
@@ -946,10 +967,10 @@ def edit_user(active_tab):
 
 @require_permission('delete_user')
 def delete_user(active_tab):
-    users = load_data(USERS_FILE, {})
+    users = load_users()
     roles = load_data(ROLES_FILE, {})
     logged_in_role_level = int(roles.get(session.get('role'), {}).get('level', 0))
-    username_to_delete = request.form.get('username')
+    username_to_delete = normalize_username(request.form.get('username'))
     if username_to_delete in users and int(roles.get(users[username_to_delete]['role'], {}).get('level', 999)) < logged_in_role_level:
         del users[username_to_delete]
         save_data(users, USERS_FILE)
@@ -1479,7 +1500,7 @@ def register():
         session['open_signup_modal'] = True
         return redirect(url_for('root'))
 
-    username  = (request.form.get('username') or '').strip()
+    username  = normalize_username(request.form.get('username'))
     password  = (request.form.get('password') or '')
     full_name = (request.form.get('full_name') or username).strip()
     email     = (request.form.get('email') or '').strip()
@@ -1490,7 +1511,7 @@ def register():
     if not password:
         errors['password'] = 'Please enter a password.'
 
-    users = load_data(USERS_FILE, {})
+    users = load_users()
 
     if username and username in users:
         errors['username'] = 'That username is taken.'
